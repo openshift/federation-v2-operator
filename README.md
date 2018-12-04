@@ -8,3 +8,4 @@ using [ci-operator](https://github.com/openshift/ci-operator) as part of the
 Federation v2 is deployed as an [operator](https://coreos.com/operators) using
 [OLM](https://github.com/operator-framework/operator-lifecycle-management).
 
+TEST
