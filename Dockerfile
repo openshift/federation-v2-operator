@@ -7,7 +7,6 @@
 FROM openshift/origin-release:golang-1.10 as builder
 RUN yum update -y
 RUN yum install -y make git
-RUN yum install -y dep
 
 ENV GOPATH /go
 ENV PATH $GOPATH/bin:/usr/local/go/bin:$PATH
@@ -23,7 +22,8 @@ COPY vendor/github.com/kubernetes-sigs/federation-v2/Makefile Makefile
 COPY vendor/github.com/kubernetes-sigs/federation-v2/pkg pkg
 COPY vendor/github.com/kubernetes-sigs/federation-v2/cmd cmd
 COPY vendor/github.com/kubernetes-sigs/federation-v2/test test
-RUN dep ensure && make build
+COPY vendor vendor
+RUN rm -rf vendor/github.com/kubernetes-sigs/federation-v2 && make build
 
 # build stage 2: copy in binaries, add OLM manifest, labels, etc.
 FROM openshift/origin-base
