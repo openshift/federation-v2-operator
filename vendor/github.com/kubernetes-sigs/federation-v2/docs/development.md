@@ -5,9 +5,16 @@ help you get started.
 
 ## Prerequisites
 
+### kubernetes
+
 The federation v2 deployment requires kubernetes version >= 1.11. To see a
 detailed list of binaries required, [see the prerequisites section in the
 user guide](userguide.md#prerequisites).
+
+### docker
+
+This repo depends on `docker` >= 1.12 to do the docker build work. 
+Set up your [Docker environment](https://docs.docker.com/install/)
 
 ## Adding a new API type
 
@@ -36,31 +43,6 @@ The generated code will need to be updated whenever the code for a
 type is modified. Care should be taken to separate generated from
 non-generated code in the commit history.
 
-## Enabling federation of a type
-
-Implementing support for federation of a Kubernetes type requires
-the following steps:
-
- - add a new template type (as per the [instructions](#adding-a-new-api-type) for adding a new API type)
-   - Ensure the spec of the new type has a `Template` field of the target Kubernetes type.
-   - e.g. [FederatedSecret](https://github.com/kubernetes-sigs/federation-v2/blob/master/pkg/apis/core/v1alpha1/federatedsecret_types.go)
-
- - add a new placement type
-   - Ensure the spec of the new type has the `ClusterNames` field of type `[]string`
-   - e.g. [FederatedSecretPlacement](https://github.com/kubernetes-sigs/federation-v2/blob/master/pkg/apis/core/v1alpha1/federatedsecretplacement_types.go)
-
- - (optionally) add a new override type
-   - Ensure the new type contains fields that should be overridable
-   - e.g. [FederatedSecretOverride](https://github.com/kubernetes-sigs/federation-v2/blob/master/pkg/apis/core/v1alpha1/federatedsecretoverride_types.go)
-
- - Add a new type config resource to configure a propagation controller
-   - Ensure the new type contains fields that should be overridable
-   - e.g. [secrets](https://github.com/kubernetes-sigs/federation-v2/blob/master/config/federatedtypes/secret.yaml)
-
- - (optionally) Add yaml test objects for template and override to support integration and e2e testing
-   - e.g. [secret-template.yaml](https://github.com/kubernetes-sigs/federation-v2/blob/master/test/common/fixtures/secret-template.yaml)
-   - e.g. [secret-override.yaml](https://github.com/kubernetes-sigs/federation-v2/blob/master/test/common/fixtures/secret-override.yaml)
-
 ## Running Tests
 
 ### Environment Setup
@@ -68,17 +50,17 @@ the following steps:
 Before running tests, make sure your environment is setup.
 
 - Ensure binaries for `etcd` and `kube-apiserver` are in the path (see
-   [prerequisites](#prerequisites)).
+  [prerequisites](#prerequisites)).
 - Export required variables:
-    ```bash
-    export TEST_ASSET_PATH="$(pwd)/bin"
-    export TEST_ASSET_ETCD="${TEST_ASSET_PATH}/etcd"
-    export TEST_ASSET_KUBE_APISERVER="${TEST_ASSET_PATH}/kube-apiserver"
-    ```
+  ```bash
+  export TEST_ASSET_PATH="$(pwd)/bin"
+  export TEST_ASSET_ETCD="${TEST_ASSET_PATH}/etcd"
+  export TEST_ASSET_KUBE_APISERVER="${TEST_ASSET_PATH}/kube-apiserver"
+  ```
 
 ### E2E
 
-The federation-v2 E2E tests can run in an *unmanaged*, *managed*, or *hybrid*
+The federation-v2 E2E tests can run in an _unmanaged_, _managed_, or _hybrid_
 modes. For both unmanaged and hybrid modes, you will need to bring your own
 clusters. The managed mode will spin up a test-managed federation consisting
 of a kube API server (hosting the federation and cluster registry APIs) and 2
@@ -102,8 +84,8 @@ The E2E managed tests will spin up the same environment as the
 checks](https://github.com/kubernetes-sigs/federation-v2/blob/master/test/e2e/crud.go) for
 federated types against that federation. To run:
 
- - ensure the same binaries are available as described in the
-   [Environment Setup](development.md#environment-setup) section.
+- ensure the same binaries are available as described in the
+  [Environment Setup](development.md#environment-setup) section.
 
 To run tests for all types:
 
@@ -141,13 +123,13 @@ Both methods require the clusters to have already been joined.
 In order to run E2E tests in an unmanaged or hybrid setup, you first need to:
 
 1. Create clusters
-    - See the [user guide for a way to deploy clusters](userguide.md#create-clusters)
-      for testing federation-v2.
+   - See the [user guide for a way to deploy clusters](userguide.md#create-clusters)
+     for testing federation-v2.
 1. Deploy the federation-v2 control plane
-    - To deploy the latest version of the federation-v2 control plane, follow
-      the [automated deployment instructions in the user guide](userguide.md#automated-deployment).
-    - To deploy your own changes, follow the [Test Your Changes](#test-your-changes)
-      section of this guide.
+   - To deploy the latest version of the federation-v2 control plane, follow
+     the [automated deployment instructions in the user guide](userguide.md#automated-deployment).
+   - To deploy your own changes, follow the [Test Your Changes](#test-your-changes)
+     section of this guide.
 
 Once completed, return here for instructions on running tests in an unmanaged or hybrid setup.
 
@@ -195,34 +177,36 @@ these steps:
 1. Reduce the `federation-controller-manager` statefulset replicas to 0. This way
    we can launch the necessary federation-v2 controllers ourselves via the test
    binary.
-    ```bash
-    kubectl -n federation-system patch statefulsets.apps \
-        federation-controller-manager -p '{"spec":{"replicas": 0}}'
-    ```
 
-    Once you've reduced the replicas to 0, you should see the
-    `federation-controller-manager` statefulset update to show 0 pods running:
-    ```bash
-    kubectl -n federation-system get statefulsets.apps federation-controller-manager
-    NAME                            DESIRED   CURRENT   AGE
-    federation-controller-manager   0         0         14s
-    ```
+   ```bash
+   kubectl -n federation-system patch statefulsets.apps \
+       federation-controller-manager -p '{"spec":{"replicas": 0}}'
+   ```
+
+   Once you've reduced the replicas to 0, you should see the
+   `federation-controller-manager` statefulset update to show 0 pods running:
+
+   ```bash
+   kubectl -n federation-system get statefulsets.apps federation-controller-manager
+   NAME                            DESIRED   CURRENT   AGE
+   federation-controller-manager   0         0         14s
+   ```
 
 1. Run tests.
 
-    ```bash
-    cd test/e2e
-    go test -args -kubeconfig=/path/to/kubeconfig -in-memory-controllers=true \
-        --v=4 -test.v --ginkgo.focus='"FederatedSecret" resources'
-    ```
+   ```bash
+   cd test/e2e
+   go test -args -kubeconfig=/path/to/kubeconfig -in-memory-controllers=true \
+       --v=4 -test.v --ginkgo.focus='"FederatedSecret" resources'
+   ```
 
    Additionally, you can run delve to debug the test:
 
-    ```bash
-    cd test/e2e
-    dlv test -- -kubeconfig=/path/to/kubeconfig -in-memory-controllers=true \
-        -v=4 -test.v --ginkgo.focus='"FederatedSecret" resources'
-    ```
+   ```bash
+   cd test/e2e
+   dlv test -- -kubeconfig=/path/to/kubeconfig -in-memory-controllers=true \
+       -v=4 -test.v --ginkgo.focus='"FederatedSecret" resources'
+   ```
 
 ##### Unmanaged and Hybrid Cleanup
 
