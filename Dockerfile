@@ -23,7 +23,8 @@ COPY vendor/github.com/kubernetes-sigs/federation-v2/pkg pkg
 COPY vendor/github.com/kubernetes-sigs/federation-v2/cmd cmd
 COPY vendor/github.com/kubernetes-sigs/federation-v2/test test
 COPY vendor vendor
-RUN rm -rf vendor/github.com/kubernetes-sigs/federation-v2 && make hyperfed controller kubefed2
+# HACK: DOCKER_CMD is set here to workaround the use of the docker command in the federation-v2 Makefile
+RUN rm -rf vendor/github.com/kubernetes-sigs/federation-v2 && DOCKER_CMD="echo && " make hyperfed controller kubefed2
 
 # build stage 2: copy in binaries, add OLM manifest, labels, etc.
 FROM openshift/origin-base
