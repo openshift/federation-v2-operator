@@ -21,7 +21,6 @@ RUN mkdir -p .git/objects
 
 COPY vendor/github.com/kubernetes-sigs/federation-v2/Makefile Makefile
 COPY vendor/github.com/kubernetes-sigs/federation-v2/pkg pkg
-COPY vendor/github.com/kubernetes-sigs/federation-v2/vendor vendor
 COPY vendor/github.com/kubernetes-sigs/federation-v2/cmd cmd
 COPY vendor/github.com/kubernetes-sigs/federation-v2/test test
 RUN dep ensure && make build
