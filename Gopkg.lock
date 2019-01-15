@@ -219,7 +219,6 @@
   version = "v1.0.1"
 
 [[projects]]
-  branch = "master"
   name = "github.com/kubernetes-sigs/federation-v2"
   packages = [
     "cmd/controller-manager/app",
@@ -272,7 +271,8 @@
     "pkg/schedulingtypes",
     "pkg/version"
   ]
-  revision = "ece49e98a7c1d95398eaa731b79606dc6f9d3d28"
+  revision = "2cdf5d37240d9b8b33e2715deb75fbb7f9e003ad"
+  version = "v0.0.4"
 
 [[projects]]
   name = "github.com/kubernetes-sigs/kubebuilder"
@@ -780,6 +780,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "290719234c550f60310dac19f152f218f4e7d1b24e04867f14d7fe4c94d7ea59"
+  inputs-digest = "19697acc80319294cd7d95afbf4391768fe19481cd9fa96f1ba526ffafa9053f"
   solver-name = "gps-cdcl"
   solver-version = 1

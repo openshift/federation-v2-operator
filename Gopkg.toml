@@ -36,7 +36,7 @@
 
 [[constraint]]
   name = "github.com/kubernetes-sigs/federation-v2"
-  branch = "master"
+  version = "v0.0.4"
 
 [[override]]
   name="k8s.io/apimachinery"

@@ -99,8 +99,8 @@ type FederationSyncController struct {
 }
 
 // StartFederationSyncController starts a new sync controller for a type config
-func StartFederationSyncController(controllerConfig *util.ControllerConfig, stopChan <-chan struct{}, typeConfig typeconfig.Interface) error {
-	controller, err := newFederationSyncController(controllerConfig, typeConfig)
+func StartFederationSyncController(controllerConfig *util.ControllerConfig, stopChan <-chan struct{}, typeConfig typeconfig.Interface, namespacePlacement *metav1.APIResource) error {
+	controller, err := newFederationSyncController(controllerConfig, typeConfig, namespacePlacement)
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func StartFederationSyncController(controllerConfig *util.ControllerConfig, stop
 }
 
 // newFederationSyncController returns a new sync controller for the configuration
-func newFederationSyncController(controllerConfig *util.ControllerConfig, typeConfig typeconfig.Interface) (*FederationSyncController, error) {
+func newFederationSyncController(controllerConfig *util.ControllerConfig, typeConfig typeconfig.Interface, namespacePlacement *metav1.APIResource) (*FederationSyncController, error) {
 	templateAPIResource := typeConfig.GetTemplate()
 	userAgent := fmt.Sprintf("%s-controller", strings.ToLower(templateAPIResource.Kind))
 
@@ -171,20 +171,11 @@ func newFederationSyncController(controllerConfig *util.ControllerConfig, typeCo
 		return nil, err
 	}
 	targetAPIResource := typeConfig.GetTarget()
-	if targetAPIResource.Kind == util.NamespaceKind {
-		s.placementPlugin = placement.NewNamespacePlacementPlugin(placementClient, targetNamespace, enqueueObj)
-	} else if targetNamespace == metav1.NamespaceAll {
-		s.placementPlugin = placement.NewResourcePlacementPlugin(placementClient, targetNamespace, enqueueObj)
+	if targetNamespace == metav1.NamespaceAll {
+		defaultAll := targetAPIResource.Kind == util.NamespaceKind
+		s.placementPlugin = placement.NewResourcePlacementPlugin(placementClient, targetNamespace, enqueueObj, defaultAll)
 	} else {
-		// TODO(marun) Source this configuration from the API
-		namespacePlacementAPIResource := metav1.APIResource{
-			Kind:       "FederatedNamespacePlacement",
-			Name:       "federatednamespaceplacements",
-			Group:      "primitives.federation.k8s.io",
-			Version:    "v1alpha1",
-			Namespaced: true,
-		}
-		namespacePlacementClient, err := util.NewResourceClient(pool, &namespacePlacementAPIResource)
+		namespacePlacementClient, err := util.NewResourceClient(pool, namespacePlacement)
 		if err != nil {
 			return nil, err
 		}
@@ -409,13 +400,13 @@ func (s *FederationSyncController) reconcile(qualifiedName util.QualifiedName) u
 	}
 	template = finalizedTemplate.(*unstructured.Unstructured)
 
-	clusterNames, err := s.clusterNames()
+	clusters, err := s.informer.GetReadyClusters()
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("Failed to get cluster list: %v", err))
 		return util.StatusNotSynced
 	}
 
-	selectedClusters, unselectedClusters, err := s.placementPlugin.ComputePlacement(placementName, clusterNames)
+	selectedClusters, unselectedClusters, err := s.placementPlugin.ComputePlacement(placementName, clusters)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("Failed to compute placement for %s %q: %v", templateKind, placementName, err))
 		return util.StatusError
@@ -454,19 +445,6 @@ func (s *FederationSyncController) objFromCache(store cache.Store, kind, key str
 		return nil, nil
 	}
 	return obj.(*unstructured.Unstructured), nil
-}
-
-func (s *FederationSyncController) clusterNames() ([]string, error) {
-	clusters, err := s.informer.GetReadyClusters()
-	if err != nil {
-		return nil, err
-	}
-	clusterNames := []string{}
-	for _, cluster := range clusters {
-		clusterNames = append(clusterNames, cluster.Name)
-	}
-
-	return clusterNames, nil
 }
 
 // delete deletes the given resource or returns error if the deletion was not complete.
@@ -542,10 +520,10 @@ func (s *FederationSyncController) clusterOperations(selectedClusters, unselecte
 
 	operations := make([]util.FederatedOperation, 0)
 
-	clusterOverrides, err := util.GetClusterOverrides(s.typeConfig, override)
+	overridesMap, err := util.GetOverrides(override)
 	if err != nil {
-		templateKind := s.typeConfig.GetTemplate().Kind
-		return nil, fmt.Errorf("Failed to marshall cluster overrides for %s %q: %v", templateKind, key, err)
+		overrideKind := s.typeConfig.GetOverride().Kind
+		return nil, fmt.Errorf("Error reading cluster overrides for %s %q: %v", overrideKind, key, err)
 	}
 
 	versionMap := s.versionManager.Get(template, override)
@@ -553,7 +531,7 @@ func (s *FederationSyncController) clusterOperations(selectedClusters, unselecte
 	targetKind := s.typeConfig.GetTarget().Kind
 	for _, clusterName := range selectedClusters {
 		// TODO(marun) Create the desired object only if needed
-		desiredObj, err := s.objectForCluster(template, clusterOverrides, clusterName)
+		desiredObj, err := s.objectForCluster(template, overridesMap[clusterName])
 		if err != nil {
 			return nil, err
 		}
@@ -657,7 +635,7 @@ func (s *FederationSyncController) clusterOperations(selectedClusters, unselecte
 }
 
 // TODO(marun) Marshall the template once per reconcile, not per-cluster
-func (s *FederationSyncController) objectForCluster(template *unstructured.Unstructured, clusterOverrides util.ClusterOverrides, clusterName string) (*unstructured.Unstructured, error) {
+func (s *FederationSyncController) objectForCluster(template *unstructured.Unstructured, overrides util.ClusterOverridesMap) (*unstructured.Unstructured, error) {
 	// Federation of namespaces uses Namespace resources as the
 	// template for resource creation in member clusters. All other
 	// federated types rely on a template type distinct from the
@@ -710,10 +688,10 @@ func (s *FederationSyncController) objectForCluster(template *unstructured.Unstr
 		obj.SetAPIVersion(fmt.Sprintf("%s/%s", targetApiResource.Group, targetApiResource.Version))
 	}
 
-	overrides, ok := clusterOverrides[clusterName]
-	if ok {
-		for _, override := range overrides {
-			unstructured.SetNestedField(obj.Object, override.FieldValue, override.Path...)
+	if overrides != nil {
+		for path, value := range overrides {
+			pathEntries := strings.Split(path, ".")
+			unstructured.SetNestedField(obj.Object, value, pathEntries...)
 		}
 	}
 
