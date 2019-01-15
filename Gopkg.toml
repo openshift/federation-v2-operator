@@ -28,6 +28,12 @@
   go-tests = true
   unused-packages = true
 
+  [[prune.project]]
+    name = "github.com/kubernetes-sigs/federation-v2"
+    non-go = false
+    go-tests = false
+    unused-packages = false
+
 [[constraint]]
   name = "github.com/kubernetes-sigs/federation-v2"
   branch = "master"
