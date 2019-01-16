@@ -300,7 +300,8 @@
     "pkg/inject/args",
     "pkg/inject/run",
     "pkg/install",
-    "pkg/signals"
+    "pkg/signals",
+    "pkg/test"
   ]
   revision = "f954dc7cff7e6c94d54139f936bb9d42314ad63e"
   version = "v1.0.4"
@@ -326,6 +327,36 @@
   packages = ["."]
   revision = "4b7aa43c6742a2c18fdef89dd197aaae7dac7ccd"
   version = "1.0.1"
+
+[[projects]]
+  name = "github.com/onsi/ginkgo"
+  packages = [
+    "config",
+    "types"
+  ]
+  revision = "2e1be8f7d90e9d3e3e58b0ce470f2f14d075406f"
+  version = "v1.7.0"
+
+[[projects]]
+  name = "github.com/onsi/gomega"
+  packages = [
+    ".",
+    "format",
+    "gbytes",
+    "gexec",
+    "internal/assertion",
+    "internal/asyncassertion",
+    "internal/oraclematcher",
+    "internal/testingtsupport",
+    "matchers",
+    "matchers/support/goraph/bipartitegraph",
+    "matchers/support/goraph/edge",
+    "matchers/support/goraph/node",
+    "matchers/support/goraph/util",
+    "types"
+  ]
+  revision = "65fb64232476ad9046e57c26cd0bff3d3a8dc6cd"
+  version = "v1.4.3"
 
 [[projects]]
   branch = "master"
@@ -385,6 +416,9 @@
   packages = [
     "context",
     "context/ctxhttp",
+    "html",
+    "html/atom",
+    "html/charset",
     "http/httpguts",
     "http2",
     "http2/hpack",
@@ -426,12 +460,24 @@
   packages = [
     "collate",
     "collate/build",
+    "encoding",
+    "encoding/charmap",
+    "encoding/htmlindex",
+    "encoding/internal",
+    "encoding/internal/identifier",
+    "encoding/japanese",
+    "encoding/korean",
+    "encoding/simplifiedchinese",
+    "encoding/traditionalchinese",
+    "encoding/unicode",
     "internal/colltab",
     "internal/gen",
     "internal/tag",
     "internal/triegen",
     "internal/ucd",
+    "internal/utf8internal",
     "language",
+    "runes",
     "secure/bidirule",
     "transform",
     "unicode/bidi",
@@ -819,9 +865,17 @@
   packages = ["pkg/framework/openapi"]
   revision = "a45bc6067dfdd3d84ec6d0993c141170c04f7f37"
 
+[[projects]]
+  name = "sigs.k8s.io/testing_frameworks"
+  packages = [
+    "integration",
+    "integration/internal"
+  ]
+  revision = "f53464b8b84b4507805a0b033a8377b225163fea"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "275d1491d95528269e36bb6a750acd7b984d332ca876adf63a416e972c12afd5"
+  inputs-digest = "c00543f26d3e9e6f3777a72ec726ff2a703402053b0a97b0a32288352096ce83"
   solver-name = "gps-cdcl"
   solver-version = 1
