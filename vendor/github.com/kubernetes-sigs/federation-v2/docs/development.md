@@ -1,3 +1,32 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [Development Guide](#development-guide)
+  - [Prerequisites](#prerequisites)
+    - [kubernetes](#kubernetes)
+    - [docker](#docker)
+  - [Adding a new API type](#adding-a-new-api-type)
+  - [Running Tests](#running-tests)
+    - [Environment Setup](#environment-setup)
+    - [E2E](#e2e)
+      - [Managed](#managed)
+      - [Unmanaged and Hybrid Cluster Setup](#unmanaged-and-hybrid-cluster-setup)
+        - [Setup Clusters, Deploy the Cluster Registry and Federation-v2 Control Plane](#setup-clusters-deploy-the-cluster-registry-and-federation-v2-control-plane)
+        - [Unmanaged](#unmanaged)
+        - [Hybrid](#hybrid)
+        - [Unmanaged and Hybrid Cleanup](#unmanaged-and-hybrid-cleanup)
+  - [Test Your Changes](#test-your-changes)
+    - [Automated Deployment](#automated-deployment)
+    - [Manual Deployment](#manual-deployment)
+      - [Build Federation Container Image](#build-federation-container-image)
+      - [Create Deployment Config](#create-deployment-config)
+  - [Test Latest Master Changes (`canary`)](#test-latest-master-changes-canary)
+  - [Test Latest Stable Version (`latest`)](#test-latest-stable-version-latest)
+  - [Updating Document](#updating-document)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # Development Guide
 
 If you would like to contribute to the federation v2 project, this guide will
@@ -78,11 +107,11 @@ The read operation is implicit.
 
 #### Managed
 
-The E2E managed tests will spin up the same environment as the
-[Integration](development.md#integration) tests described above and run [CRUD
-(create-read-update-delete)
-checks](https://github.com/kubernetes-sigs/federation-v2/blob/master/test/e2e/crud.go) for
-federated types against that federation. To run:
+The E2E managed tests will spin up a federation consisting of kube
+api + cluster registry api + federation api + 2 member clusters and
+run [CRUD (create-read-update-delete)
+checks](https://github.com/kubernetes-sigs/federation-v2/blob/master/test/e2e/crud.go)
+for federated types against that federation. To run:
 
 - ensure the same binaries are available as described in the
   [Environment Setup](development.md#environment-setup) section.
@@ -98,7 +127,7 @@ To run tests for a single type:
 
 ```bash
 cd test/e2e
-go test -args -v=4 -test.v --ginkgo.focus='"FederatedSecret"'
+go test -args -v=4 -test.v --ginkgo.focus='Federated "secrets"'
 ```
 
 It may be helpful to use the [delve
@@ -107,7 +136,7 @@ the components involved in the test:
 
 ```bash
 cd test/e2e
-dlv test -- -v=4 -test.v --ginkgo.focus='"FederatedSecret"'
+dlv test -- -v=4 -test.v --ginkgo.focus='Federated "secrets"'
 ```
 
 #### Unmanaged and Hybrid Cluster Setup
@@ -154,7 +183,7 @@ To run E2E tests for a single type:
 ```bash
 cd test/e2e
 go test -args -kubeconfig=/path/to/kubeconfig -v=4 -test.v \
-    --ginkgo.focus='"FederatedSecret" resources'
+    --ginkgo.focus='Federated "secrets"'
 ```
 
 It may be helpful to use the [delve
@@ -164,7 +193,7 @@ the components involved in the test:
 ```bash
 cd test/e2e
 dlv test -- -kubeconfig=/path/to/kubeconfig -v=4 -test.v \
-    --ginkgo.focus='"FederatedSecret"'
+    --ginkgo.focus='Federated "secrets"'
 ```
 
 ##### Hybrid
@@ -197,7 +226,7 @@ these steps:
    ```bash
    cd test/e2e
    go test -args -kubeconfig=/path/to/kubeconfig -in-memory-controllers=true \
-       --v=4 -test.v --ginkgo.focus='"FederatedSecret" resources'
+       --v=4 -test.v --ginkgo.focus='Federated "secrets"'
    ```
 
    Additionally, you can run delve to debug the test:
@@ -205,7 +234,7 @@ these steps:
    ```bash
    cd test/e2e
    dlv test -- -kubeconfig=/path/to/kubeconfig -in-memory-controllers=true \
-       -v=4 -test.v --ginkgo.focus='"FederatedSecret" resources'
+       -v=4 -test.v --ginkgo.focus='Federated "secrets"'
    ```
 
 ##### Unmanaged and Hybrid Cleanup
@@ -216,6 +245,13 @@ Follow the [cleanup instructions in the user guide](userguide.md#cleanup).
 
 In order to test your changes on your kubernetes cluster, you'll need
 to build an image and a deployment config.
+
+**NOTE:** When federation CRDs are changed, you need to run:
+```bash
+./scripts/sync-up-helm-chart.sh
+```
+This script ensures that the CRD resources in helm chart can be synced.
+Ensure binaries from kubebuilder for `etcd` and `kube-apiserver` are in the path (see [prerequisites](#prerequisites)).
 
 ### Automated Deployment
 
@@ -298,3 +334,8 @@ In order to test the latest stable released version (tagged as `latest`) on
 your kubernetes cluster, follow the
 [automated](userguide.md#automated-deployment) or
 [manual](userguide.md#manual-deployment) instructions from the user guide.
+
+## Updating Document
+
+If you are going to add some new sections for the document, make sure to update the table
+of contents. This can be done manually or with [doctoc](https://github.com/thlorenz/doctoc).

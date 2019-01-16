@@ -175,6 +175,11 @@ var _ = Describe("ReplicaSchedulingPreferences", func() {
 					if err != nil {
 						tl.Fatalf("Failed waiting for matching overrides: %v", err)
 					}
+
+					err = deleteTestObj(typeConfig, kubeConfig, name, namespace)
+					if err != nil {
+						tl.Fatalf("Deletion of test object failed in fedeartion: %v", err)
+					}
 				})
 			}
 		})
@@ -208,7 +213,7 @@ func rspSpecWithClusterList(total int32, w1, w2, min1, min2 int64, clusters []st
 
 func createTestObjs(tl common.TestLogger, fedClient clientset.Interface, typeConfig typeconfig.Interface, kubeConfig *restclient.Config, rspSpec fedschedulingv1a1.ReplicaSchedulingPreferenceSpec, namespace string) (string, error) {
 	templateAPIResource := typeConfig.GetTemplate()
-	templateClient, err := util.NewResourceClientFromConfig(kubeConfig, &templateAPIResource)
+	templateClient, err := util.NewResourceClient(kubeConfig, &templateAPIResource)
 	if err != nil {
 		return "", err
 	}
@@ -222,7 +227,7 @@ func createTestObjs(tl common.TestLogger, fedClient clientset.Interface, typeCon
 	if err != nil {
 		return "", err
 	}
-	createdTemplate, err := templateClient.Resources(namespace).Create(template)
+	createdTemplate, err := templateClient.Resources(namespace).Create(template, metav1.CreateOptions{})
 	if err != nil {
 		return "", err
 	}
@@ -243,10 +248,25 @@ func createTestObjs(tl common.TestLogger, fedClient clientset.Interface, typeCon
 	return name, nil
 }
 
+func deleteTestObj(typeConfig typeconfig.Interface, kubeConfig *restclient.Config, name, namespace string) error {
+	templateAPIResource := typeConfig.GetTemplate()
+	templateClient, err := util.NewResourceClient(kubeConfig, &templateAPIResource)
+	if err != nil {
+		return err
+	}
+
+	err = templateClient.Resources(namespace).Delete(name, &metav1.DeleteOptions{})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func waitForMatchingPlacement(tl common.TestLogger, typeConfig typeconfig.Interface, kubeConfig *restclient.Config, name, namespace string, expected map[string]int32) error {
 	placementAPIResource := typeConfig.GetPlacement()
 	placementKind := placementAPIResource.Kind
-	client, err := util.NewResourceClientFromConfig(kubeConfig, &placementAPIResource)
+	client, err := util.NewResourceClient(kubeConfig, &placementAPIResource)
 	if err != nil {
 		return err
 	}
@@ -277,7 +297,7 @@ func waitForMatchingPlacement(tl common.TestLogger, typeConfig typeconfig.Interf
 func waitForMatchingOverride(tl common.TestLogger, typeConfig typeconfig.Interface, kubeConfig *restclient.Config, name, namespace string, expected32 map[string]int32) error {
 	overrideAPIResource := typeConfig.GetOverride()
 	overrideKind := overrideAPIResource.Kind
-	client, err := util.NewResourceClientFromConfig(kubeConfig, overrideAPIResource)
+	client, err := util.NewResourceClient(kubeConfig, &overrideAPIResource)
 	if err != nil {
 		return err
 	}

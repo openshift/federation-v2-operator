@@ -121,12 +121,7 @@ func (j *disableType) Run(cmdOut io.Writer, config util.FedConfig) error {
 		Name:      j.targetName,
 	}
 
-	err = DisableFederation(cmdOut, hostConfig, typeConfigName, j.delete, j.DryRun)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return DisableFederation(cmdOut, hostConfig, typeConfigName, j.delete, j.DryRun)
 }
 
 func DisableFederation(cmdOut io.Writer, config *rest.Config, typeConfigName ctlutil.QualifiedName, delete, dryRun bool) error {
@@ -199,13 +194,9 @@ func deletePrimitives(config *rest.Config, typeConfig typeconfig.Interface, writ
 }
 
 func primitiveCRDNames(typeConfig typeconfig.Interface) []string {
-	names := []string{
+	return []string{
 		typeconfig.GroupQualifiedName(typeConfig.GetTemplate()),
 		typeconfig.GroupQualifiedName(typeConfig.GetPlacement()),
+		typeconfig.GroupQualifiedName(typeConfig.GetOverride()),
 	}
-	overrideAPIResource := typeConfig.GetOverride()
-	if overrideAPIResource != nil {
-		names = append(names, typeconfig.GroupQualifiedName(*overrideAPIResource))
-	}
-	return names
 }

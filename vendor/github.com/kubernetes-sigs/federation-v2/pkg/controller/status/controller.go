@@ -33,7 +33,6 @@ import (
 	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -98,14 +97,12 @@ func newFederationStatusController(controllerConfig *util.ControllerConfig, type
 	// Initialize non-dynamic clients first to avoid polluting config
 	fedClient, kubeClient, crClient := controllerConfig.AllClients(userAgent)
 
-	pool := dynamic.NewDynamicClientPool(controllerConfig.KubeConfig)
-
-	templateClient, err := util.NewResourceClient(pool, &templateAPIResource)
+	templateClient, err := util.NewResourceClient(controllerConfig.KubeConfig, &templateAPIResource)
 	if err != nil {
 		return nil, err
 	}
 
-	statusClient, err := util.NewResourceClient(pool, statusAPIResource)
+	statusClient, err := util.NewResourceClient(controllerConfig.KubeConfig, statusAPIResource)
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +236,7 @@ func (s *FederationStatusController) reconcile(qualifiedName util.QualifiedName)
 
 	glog.V(4).Infof("Starting to reconcile %v %v", statusKind, key)
 	startTime := time.Now()
-	defer glog.V(4).Infof("Finished reconciling %v %v (duration: %v)", statusKind, key, time.Now().Sub(startTime))
+	defer glog.V(4).Infof("Finished reconciling %v %v (duration: %v)", statusKind, key, time.Since(startTime))
 
 	template, err := s.objFromCache(s.templateStore, templateKind, key)
 	if err != nil {
@@ -295,14 +292,14 @@ func (s *FederationStatusController) reconcile(qualifiedName util.QualifiedName)
 	}
 
 	if existingStatus == nil {
-		_, err = s.statusClient.Resources(qualifiedName.Namespace).Create(status)
+		_, err = s.statusClient.Resources(qualifiedName.Namespace).Create(status, metav1.CreateOptions{})
 		if err != nil {
 			runtime.HandleError(fmt.Errorf("Failed to create status object for federated type %s %q: %v", statusKind, key, err))
 			return util.StatusNeedsRecheck
 		}
 	} else if !reflect.DeepEqual(existingStatus.Object["clusterStatus"], status.Object["clusterStatus"]) {
 		existingStatus.Object["clusterStatus"] = status.Object["clusterStatus"]
-		_, err = s.statusClient.Resources(qualifiedName.Namespace).Update(existingStatus)
+		_, err = s.statusClient.Resources(qualifiedName.Namespace).Update(existingStatus, metav1.UpdateOptions{})
 		if err != nil {
 			runtime.HandleError(fmt.Errorf("Failed to update status object for federated type %s %q: %v", statusKind, key, err))
 			return util.StatusNeedsRecheck
