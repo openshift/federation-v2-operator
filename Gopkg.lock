@@ -183,7 +183,7 @@
     "openstack/utils",
     "pagination"
   ]
-  revision = "a9f90060ebd9d4e0be53e429d2623746b700468c"
+  revision = "890f8679ad1c0470d7cd9f38a931720bd0411cfe"
 
 [[projects]]
   branch = "master"
@@ -240,10 +240,14 @@
     "pkg/apis/multiclusterdns/v1alpha1",
     "pkg/apis/scheduling/v1alpha1",
     "pkg/client/clientset/versioned",
+    "pkg/client/clientset/versioned/fake",
     "pkg/client/clientset/versioned/scheme",
     "pkg/client/clientset/versioned/typed/core/v1alpha1",
+    "pkg/client/clientset/versioned/typed/core/v1alpha1/fake",
     "pkg/client/clientset/versioned/typed/multiclusterdns/v1alpha1",
+    "pkg/client/clientset/versioned/typed/multiclusterdns/v1alpha1/fake",
     "pkg/client/clientset/versioned/typed/scheduling/v1alpha1",
+    "pkg/client/clientset/versioned/typed/scheduling/v1alpha1/fake",
     "pkg/client/informers/externalversions",
     "pkg/client/informers/externalversions/core",
     "pkg/client/informers/externalversions/core/v1alpha1",
@@ -415,7 +419,7 @@
     "unix",
     "windows"
   ]
-  revision = "a457fd036447854c0c02e89ea439481bdcf941a2"
+  revision = "11f53e03133963fb11ae0588e08b5e0b85be8be5"
 
 [[projects]]
   name = "golang.org/x/text"
@@ -636,6 +640,7 @@
   name = "k8s.io/client-go"
   packages = [
     "discovery",
+    "discovery/fake",
     "dynamic",
     "informers",
     "informers/admissionregistration",
@@ -753,6 +758,7 @@
     "plugin/pkg/client/auth/openstack",
     "rest",
     "rest/watch",
+    "testing",
     "third_party/forked/golang/template",
     "tools/auth",
     "tools/cache",
@@ -805,7 +811,7 @@
   branch = "master"
   name = "k8s.io/kube-openapi"
   packages = ["pkg/util/proto"]
-  revision = "0317810137be915b9cf888946c6e115c1bfac693"
+  revision = "ced9eb3070a5f1c548ef46e8dfe2a97c208d9f03"
 
 [[projects]]
   branch = "master"
@@ -816,6 +822,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "2a931c87c406c3263a17bdfaa3d57b581ddbabdd789ade86fd02d47ea7409d95"
+  inputs-digest = "275d1491d95528269e36bb6a750acd7b984d332ca876adf63a416e972c12afd5"
   solver-name = "gps-cdcl"
   solver-version = 1
