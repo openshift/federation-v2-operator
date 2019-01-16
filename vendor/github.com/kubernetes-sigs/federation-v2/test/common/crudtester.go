@@ -33,7 +33,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 )
 
@@ -50,7 +49,7 @@ type FederatedTypeCrudTester struct {
 	typeConfig       typeconfig.Interface
 	comparisonHelper util.ComparisonHelper
 	fedClient        clientset.Interface
-	pool             dynamic.ClientPool
+	kubeConfig       *rest.Config
 	testClusters     map[string]TestCluster
 	waitInterval     time.Duration
 	// Federation operations will use wait.ForeverTestTimeout.  Any
@@ -80,7 +79,7 @@ func NewFederatedTypeCrudTester(testLogger TestLogger, typeConfig typeconfig.Int
 		typeConfig:         typeConfig,
 		comparisonHelper:   compare,
 		fedClient:          clientset.NewForConfigOrDie(kubeConfig),
-		pool:               dynamic.NewDynamicClientPool(kubeConfig),
+		kubeConfig:         kubeConfig,
 		testClusters:       testClusters,
 		waitInterval:       waitInterval,
 		clusterWaitTimeout: clusterWaitTimeout,
@@ -116,8 +115,7 @@ func (c *FederatedTypeCrudTester) Create(desiredTemplate, desiredPlacement, desi
 	var override *unstructured.Unstructured
 	if desiredOverride != nil {
 		desiredOverride.SetName(name)
-		overrideAPIResource := c.typeConfig.GetOverride()
-		override = c.createFedResource(*overrideAPIResource, desiredOverride)
+		override = c.createFedResource(c.typeConfig.GetOverride(), desiredOverride)
 	}
 
 	desiredTemplate.SetName(name)
@@ -137,7 +135,7 @@ func (c *FederatedTypeCrudTester) createFedResource(apiResource metav1.APIResour
 	c.tl.Logf("Creating new %s", resourceMsg)
 
 	client := c.fedResourceClient(apiResource)
-	obj, err := client.Resources(namespace).Create(desiredObj)
+	obj, err := client.Resources(namespace).Create(desiredObj, metav1.CreateOptions{})
 	if err != nil {
 		c.tl.Fatalf("Error creating %s: %v", resourceMsg, err)
 	}
@@ -149,7 +147,7 @@ func (c *FederatedTypeCrudTester) createFedResource(apiResource metav1.APIResour
 }
 
 func (c *FederatedTypeCrudTester) fedResourceClient(apiResource metav1.APIResource) util.ResourceClient {
-	client, err := util.NewResourceClient(c.pool, &apiResource)
+	client, err := util.NewResourceClient(c.kubeConfig, &apiResource)
 	if err != nil {
 		c.tl.Fatalf("Error creating resource client: %v", err)
 	}
@@ -159,9 +157,13 @@ func (c *FederatedTypeCrudTester) fedResourceClient(apiResource metav1.APIResour
 func (c *FederatedTypeCrudTester) CheckCreate(desiredTemplate, desiredPlacement, desiredOverride *unstructured.Unstructured) (*unstructured.Unstructured, *unstructured.Unstructured, *unstructured.Unstructured) {
 	template, placement, override := c.Create(desiredTemplate, desiredPlacement, desiredOverride)
 
-	msg := fmt.Sprintf("Resource versions for %s: template %q, placement %q",
+	templateHash, err := versionmanager.GetTemplateHash(template)
+	if err != nil {
+		c.tl.Fatalf("Failed to compute template hash: %v", err)
+	}
+	msg := fmt.Sprintf("Versions for %s: template %q, placement %q",
 		util.NewQualifiedName(template),
-		template.GetResourceVersion(),
+		templateHash,
 		placement.GetResourceVersion(),
 	)
 	if override != nil {
@@ -457,7 +459,7 @@ func (c *FederatedTypeCrudTester) updateFedObject(apiResource metav1.APIResource
 	err := wait.PollImmediate(c.waitInterval, wait.ForeverTestTimeout, func() (bool, error) {
 		mutateResourceFunc(obj)
 
-		_, err := client.Resources(obj.GetNamespace()).Update(obj)
+		_, err := client.Resources(obj.GetNamespace()).Update(obj, metav1.UpdateOptions{})
 		if errors.IsConflict(err) {
 			// The resource was updated by the federation controller.
 			// Get the latest version and retry.
@@ -517,11 +519,15 @@ func (c *FederatedTypeCrudTester) expectedVersion(qualifiedName util.QualifiedNa
 		return "", false
 	}
 
-	matchedVersions := (version.TemplateVersion == template.GetResourceVersion() &&
+	templateHash, err := versionmanager.GetTemplateHash(template)
+	if err != nil {
+		c.tl.Fatalf("Failed to compute template hash: %v", err)
+	}
+	matchedVersions := (version.TemplateVersion == templateHash &&
 		version.OverrideVersion == overrideVersion)
 	if !matchedVersions {
 		c.tl.Logf("Expected template and override versions (%q, %q), got (%q, %q)",
-			template.GetResourceVersion(), overrideVersion,
+			templateHash, overrideVersion,
 			version.TemplateVersion, version.OverrideVersion,
 		)
 		return "", false

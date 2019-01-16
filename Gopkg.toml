@@ -30,29 +30,48 @@
 
   [[prune.project]]
     name = "github.com/kubernetes-sigs/federation-v2"
-    non-go = false
     go-tests = false
     unused-packages = false
 
 [[constraint]]
   name = "github.com/kubernetes-sigs/federation-v2"
-  version = "v0.0.4"
+  branch = "master"
 
 [[override]]
   name="k8s.io/apimachinery"
-  version="kubernetes-1.10.1"
+  version="kubernetes-1.12.4"
 
 [[override]]
   name="k8s.io/client-go"
-  version="kubernetes-1.10.1"
+  version="kubernetes-1.12.4"
+
+[[override]]
+  name="k8s.io/api"
+  version="kubernetes-1.12.4"
+
+[[override]]
+  name="k8s.io/apiserver"
+  version="kubernetes-1.12.4"
+
+[[override]]
+  name="k8s.io/kube-aggregator"
+  version="kubernetes-1.12.4"
+
+[[override]]
+  name="k8s.io/apiextensions-apiserver"
+  version="kubernetes-1.12.4"
 
 [[override]]
   name="sigs.k8s.io/controller-runtime"
-  version="v0.1.1"
+  version="v0.1.8"
 
 [[override]]
   name="sigs.k8s.io/controller-tools"
-  version="v0.1.1"
+  version="v0.1.8"
+
+[[override]]
+  name = "github.com/Azure/go-autorest"
+  version = "v11.1.0"
 
 # For dependency below: Refer to issue https://github.com/golang/dep/issues/1799
 [[override]]
@@ -60,6 +79,3 @@ name = "gopkg.in/fsnotify.v1"
 source = "https://github.com/fsnotify/fsnotify.git"
 version="v1.4.7"
 
-#[[constraint]]
-#  branch = "master"
-#  name = "k8s.io/kubectl"

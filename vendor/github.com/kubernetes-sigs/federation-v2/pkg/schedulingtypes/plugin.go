@@ -30,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -60,6 +59,8 @@ type Plugin struct {
 	placementClient util.ResourceClient
 
 	typeConfig typeconfig.Interface
+
+	stopChannel chan struct{}
 }
 
 func NewPlugin(controllerConfig *util.ControllerConfig, eventHandlers SchedulerEventHandlers, typeConfig typeconfig.Interface) (*Plugin, error) {
@@ -75,29 +76,29 @@ func NewPlugin(controllerConfig *util.ControllerConfig, eventHandlers SchedulerE
 			eventHandlers.ClusterEventHandler,
 			eventHandlers.ClusterLifecycleHandlers,
 		),
-		typeConfig: typeConfig,
+		typeConfig:  typeConfig,
+		stopChannel: make(chan struct{}),
 	}
-
-	pool := dynamic.NewDynamicClientPool(controllerConfig.KubeConfig)
 
 	targetNamespace := controllerConfig.TargetNamespace
 	federationEventHandler := eventHandlers.FederationEventHandler
 
 	templateAPIResource := typeConfig.GetTemplate()
-	templateClient, err := util.NewResourceClient(pool, &templateAPIResource)
+	templateClient, err := util.NewResourceClient(controllerConfig.KubeConfig, &templateAPIResource)
 	if err != nil {
 		return nil, err
 	}
 	p.templateStore, p.templateController = util.NewResourceInformer(templateClient, targetNamespace, federationEventHandler)
 
 	placementAPIResource := typeConfig.GetPlacement()
-	p.placementClient, err = util.NewResourceClient(pool, &placementAPIResource)
+	p.placementClient, err = util.NewResourceClient(controllerConfig.KubeConfig, &placementAPIResource)
 	if err != nil {
 		return nil, err
 	}
 	p.placementStore, p.placementController = util.NewResourceInformer(p.placementClient, targetNamespace, federationEventHandler)
 
-	p.overrideClient, err = util.NewResourceClient(pool, typeConfig.GetOverride())
+	overrideAPIResource := typeConfig.GetOverride()
+	p.overrideClient, err = util.NewResourceClient(controllerConfig.KubeConfig, &overrideAPIResource)
 	if err != nil {
 		return nil, err
 	}
@@ -106,15 +107,17 @@ func NewPlugin(controllerConfig *util.ControllerConfig, eventHandlers SchedulerE
 	return p, nil
 }
 
-func (p *Plugin) Start(stopChan <-chan struct{}) {
+func (p *Plugin) Start() {
 	p.targetInformer.Start()
-	go p.templateController.Run(stopChan)
-	go p.overrideController.Run(stopChan)
-	go p.placementController.Run(stopChan)
+
+	go p.templateController.Run(p.stopChannel)
+	go p.overrideController.Run(p.stopChannel)
+	go p.placementController.Run(p.stopChannel)
 }
 
 func (p *Plugin) Stop() {
 	p.targetInformer.Stop()
+	close(p.stopChannel)
 }
 
 func (p *Plugin) HasSynced() bool {
@@ -165,7 +168,7 @@ func (p *Plugin) ReconcilePlacement(qualifiedName util.QualifiedName, newCluster
 		}
 		newPlacement := newUnstructured(p.typeConfig.GetPlacement(), qualifiedName)
 		setPlacementSpec(newPlacement, newClusterNames)
-		_, err := p.placementClient.Resources(qualifiedName.Namespace).Create(newPlacement)
+		_, err := p.placementClient.Resources(qualifiedName.Namespace).Create(newPlacement, metav1.CreateOptions{})
 		return err
 	}
 
@@ -175,7 +178,7 @@ func (p *Plugin) ReconcilePlacement(qualifiedName util.QualifiedName, newCluster
 	}
 	if PlacementUpdateNeeded(clusterNames, newClusterNames) {
 		setPlacementSpec(placement, newClusterNames)
-		_, err := p.placementClient.Resources(qualifiedName.Namespace).Update(placement)
+		_, err := p.placementClient.Resources(qualifiedName.Namespace).Update(placement, metav1.UpdateOptions{})
 		if err != nil {
 			return err
 		}
@@ -190,13 +193,12 @@ func (p *Plugin) ReconcileOverride(qualifiedName util.QualifiedName, result map[
 		if !errors.IsNotFound(err) {
 			return err
 		}
-		apiResource := p.typeConfig.GetOverride()
-		newOverride := newUnstructured(*apiResource, qualifiedName)
+		newOverride := newUnstructured(p.typeConfig.GetOverride(), qualifiedName)
 		err := setOverrides(newOverride, nil, result)
 		if err != nil {
 			return err
 		}
-		_, err = p.overrideClient.Resources(qualifiedName.Namespace).Create(newOverride)
+		_, err = p.overrideClient.Resources(qualifiedName.Namespace).Create(newOverride, metav1.CreateOptions{})
 		return err
 	}
 
@@ -210,7 +212,7 @@ func (p *Plugin) ReconcileOverride(qualifiedName util.QualifiedName, result map[
 		if err != nil {
 			return err
 		}
-		_, err = p.overrideClient.Resources(qualifiedName.Namespace).Update(override)
+		_, err = p.overrideClient.Resources(qualifiedName.Namespace).Update(override, metav1.UpdateOptions{})
 		if err != nil {
 			return err
 		}

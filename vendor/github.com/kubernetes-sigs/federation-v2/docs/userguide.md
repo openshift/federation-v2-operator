@@ -1,3 +1,49 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [User Guide](#user-guide)
+  - [Prerequisites](#prerequisites)
+    - [Binaries](#binaries)
+      - [kubebuilder](#kubebuilder)
+    - [Deployment Image](#deployment-image)
+    - [Create Clusters](#create-clusters)
+  - [Helm Chart Deployment](#helm-chart-deployment)
+  - [Automated Deployment](#automated-deployment)
+  - [Operations](#operations)
+    - [Join Clusters](#join-clusters)
+    - [Check Status of Joined Clusters](#check-status-of-joined-clusters)
+  - [Enabling federation of an API type](#enabling-federation-of-an-api-type)
+  - [Disabling federation of an API type](#disabling-federation-of-an-api-type)
+  - [Example](#example)
+    - [Create the Test Namespace](#create-the-test-namespace)
+    - [Create Test Resources](#create-test-resources)
+    - [Check Status of Resources](#check-status-of-resources)
+    - [Update FederatedNamespacePlacement](#update-federatednamespaceplacement)
+      - [Using Cluster Selector](#using-cluster-selector)
+        - [Neither `spec.clusterNames` nor `spec.clusterSelector` is provided](#neither-specclusternames-nor-specclusterselector-is-provided)
+        - [Both `spec.clusterNames` and `spec.clusterSelector` are provided](#both-specclusternames-and-specclusterselector-are-provided)
+        - [`spec.clusterNames` is not provided, `spec.clusterSelector` is provided but empty](#specclusternames-is-not-provided-specclusterselector-is-provided-but-empty)
+        - [`spec.clusterNames` is not provided, `spec.clusterSelector` is provided and not empty](#specclusternames-is-not-provided-specclusterselector-is-provided-and-not-empty)
+    - [Example Cleanup](#example-cleanup)
+    - [Troubleshooting](#troubleshooting)
+  - [Cleanup](#cleanup)
+    - [Deployment Cleanup](#deployment-cleanup)
+  - [Namespaced Federation](#namespaced-federation)
+    - [Automated Deployment](#automated-deployment-1)
+    - [Joining Clusters](#joining-clusters)
+    - [Deployment Cleanup](#deployment-cleanup-1)
+  - [Higher order behaviour](#higher-order-behaviour)
+    - [Multi-Cluster Ingress DNS](#multi-cluster-ingress-dns)
+    - [Multi-Cluster Service DNS](#multi-cluster-service-dns)
+    - [ReplicaSchedulingPreference](#replicaschedulingpreference)
+      - [Distribute total replicas evenly in all available clusters](#distribute-total-replicas-evenly-in-all-available-clusters)
+      - [Distribute total replicas in weighted proportions](#distribute-total-replicas-in-weighted-proportions)
+      - [Distribute replicas in weighted proportions, also enforcing replica limits per cluster](#distribute-replicas-in-weighted-proportions-also-enforcing-replica-limits-per-cluster)
+      - [Distribute replicas evenly in all clusters, however not more then 20 in C](#distribute-replicas-evenly-in-all-clusters-however-not-more-then-20-in-c)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # User Guide
 
 If you are looking to use federation v2, you've come to the right place. Below
@@ -53,6 +99,8 @@ Kubernetes environments that have been tested and are supported by the Federatio
 - [Minikube](./environments/minikube.md)
 
 - [Google Kubernetes Engine (GKE)](./environments/gke.md)
+
+- [IBM Cloud Private](./environments/icp.md)
 
 After completing the steps in one of the above guides, return here to continue the Federation v2 deployment.
 
@@ -145,6 +193,12 @@ federation system namespace with the group-qualified plural name of the target t
 `FederatedTypeConfig` associates the primitive CRD types with the target type, and enables the
 primitive types to be propagated as the target type to member clusters.
 
+It is also possible to output the yaml to `stdout` instead of applying it to the API Server:
+
+```bash
+kubefed2 federate enable <target API type> --output=yaml
+```
+
 **NOTE:** Federation of a CRD requires that the CRD be installed on all member clusters.  If
 the CRD is not installed on a member cluster, propagation to that cluster will fail.
 
@@ -167,7 +221,7 @@ flag will remove the `FederatedTypeConfig` and the primitive CRDS created by `en
 kubefed2 federate disable <FederatedTypeConfig name> --delete-from-api
 ```
 
-**WARNING: All primitive custom resources for the type will be removed by this command**
+**WARNING: All primitive custom resources for the type will be removed by this command.**
 
 ## Example
 
@@ -291,6 +345,74 @@ done
 If you were able to verify the resources removed and added back then you have
 successfully verified a working federation-v2 deployment.
 
+#### Using Cluster Selector
+
+In addition to specifying an explicit list of clusters that a resource should be
+propagated to via the `spec.clusterNames` field of a placement resource, it is possible
+to use the `spec.clusterSelector` field to provide a label selector that determines
+that list of clusters at runtime.
+
+If the goal is to select a subset of member clusters, make sure that the `FederatedCluster`
+resources that are intended to be selected have the appropriate labels applied.
+
+The following command is an example to label a `FederatedCluster`:
+
+```bash
+kubectl label federatedclusters -n federation-system cluster1 foo=bar
+```
+
+Please refer to [Kubernetes label command](https://kubernetes.io/docs/reference/generated/kubectl/kubectl-commands#label)
+to get more detail for how `kubectl label` works.
+
+The following sections detail how `spec.clusterNames` and `spec.clusterSelector` are
+used in determining the clusters that a federated resource should be propagated to.
+
+##### Neither `spec.clusterNames` nor `spec.clusterSelector` is provided
+
+```yaml
+spec: {}
+```
+
+In this case, you can either set `spec: {}` as above or remove `spec` field from your
+placement policy. The resource will not be propagated to member clusters.
+
+##### Both `spec.clusterNames` and `spec.clusterSelector` are provided
+
+```yaml
+spec:
+  clusterNames:
+    - cluster2
+    - cluster1
+  clusterSelector:
+    matchLabels:
+      foo: bar
+```
+
+For this case, `spec.clusterSelector` will be ignored as `spec.clusterNames` is provided. This
+ensures that the results of runtime scheduling have priority over manual definition of a
+cluster selector.
+
+##### `spec.clusterNames` is not provided, `spec.clusterSelector` is provided but empty
+
+```yaml
+spec:
+  clusterSelector: {}
+```
+
+In this case, the resource will be propagated to all member clusters.
+
+##### `spec.clusterNames` is not provided, `spec.clusterSelector` is provided and not empty
+
+```yaml
+spec:
+  clusterSelector:
+    matchLabels:
+      foo: bar
+```
+
+In this case, the resource will only be propagated to member clusters that are labeled
+with `foo: bar`.
+
 ### Example Cleanup
 
 To cleanup the example simply delete the namespace:
@@ -323,6 +445,9 @@ kubectl logs -f federation-controller-manager-0 -n federation-system
 ## Cleanup
 
 ### Deployment Cleanup
+
+Resources such as `namespaces` associated with a `FederatedNamespacePlacement` or `FederatedClusterRoles`
+should be deleted before cleaning up the deployment, otherwise, the process will fail.
 
 Run the following command to perform a cleanup of the cluster registry and
 federation deployments:
@@ -388,18 +513,6 @@ To join `mycluster` when `FEDERATION_NAMESPACE=test-namespace` was used for depl
     --limited-scope=true
 ```
 
-### Multi-Cluster Ingress DNS
-
-Multi-Cluster Ingress DNS provides the ability to programmatically manage DNS resource records of Ingress objects
-through [ExternalDNS](https://github.com/kubernetes-incubator/external-dns) integration. Review the
-[Multi-Cluster Ingress DNS with ExternalDNS Guide](./ingressdns-with-externaldns.md) to learn more.
-
-### Multi-Cluster Service DNS
-
-Multi-Cluster Service DNS provides the ability to programmatically manage DNS resource records of Service objects
-through [ExternalDNS](https://github.com/kubernetes-incubator/external-dns) integration. Review the
-[Multi-Cluster Service DNS with ExternalDNS Guide](./servicedns-with-externaldns.md) to learn more.
-
 ### Deployment Cleanup
 
 Cleanup similarly requires the use of the same environment variables
@@ -416,6 +529,18 @@ constructed using the mechanics provided by the core API types (`template`,
 `placement` and `override`) and associated controllers for a given resource.
 Further sections describe few of higher level APIs implemented as part of
 Federation V2.
+
+### Multi-Cluster Ingress DNS
+
+Multi-Cluster Ingress DNS provides the ability to programmatically manage DNS resource records of Ingress objects
+through [ExternalDNS](https://github.com/kubernetes-incubator/external-dns) integration. Review the
+[Multi-Cluster Ingress DNS with ExternalDNS Guide](./ingressdns-with-externaldns.md) to learn more.
+
+### Multi-Cluster Service DNS
+
+Multi-Cluster Service DNS provides the ability to programmatically manage DNS resource records of Service objects
+through [ExternalDNS](https://github.com/kubernetes-incubator/external-dns) integration. Review the
+[Multi-Cluster Service DNS with ExternalDNS Guide](./servicedns-with-externaldns.md) to learn more.
 
 ### ReplicaSchedulingPreference
 

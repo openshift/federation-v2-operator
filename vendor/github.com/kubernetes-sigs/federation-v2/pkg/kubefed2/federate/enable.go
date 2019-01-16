@@ -92,7 +92,7 @@ func (o *enableTypeOptions) Bind(flags *pflag.FlagSet) {
 	)
 	flags.StringVar(&o.primitiveGroup, "primitive-group", defaultPrimitiveGroup, "The name of the API group to use for generated federation primitives.")
 	flags.StringVar(&o.primitiveVersion, "primitive-version", defaultPrimitiveVersion, "The API version to use for generated federation primitives.")
-	flags.StringVarP(&o.output, "output", "o", "", "If provided, the resources that will be created in the API will be output to stdout in the provided format.  Valid values are ['yaml'].")
+	flags.StringVarP(&o.output, "output", "o", "", "If provided, the resources that would be created in the API by the command are instead output to stdout in the provided format.  Valid values are ['yaml'].")
 	flags.StringVarP(&o.filename, "filename", "f", "", "If provided, the command will be configured from the provided yaml file.  Only --output wll be accepted from the command line")
 }
 
@@ -194,6 +194,8 @@ func (j *enableType) Run(cmdOut io.Writer, config util.FedConfig) error {
 		if err != nil {
 			return fmt.Errorf("Failed to write objects to YAML: %v", err)
 		}
+		// -o yaml implies dry run
+		return nil
 	}
 
 	if j.DryRun {
@@ -201,12 +203,7 @@ func (j *enableType) Run(cmdOut io.Writer, config util.FedConfig) error {
 		return nil
 	}
 
-	err = CreateResources(cmdOut, hostConfig, resources, j.FederationNamespace)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return CreateResources(cmdOut, hostConfig, resources, j.FederationNamespace)
 }
 
 type typeResources struct {
@@ -299,7 +296,7 @@ func typeConfigForTarget(apiResource metav1.APIResource, federateDirective *Fede
 			Placement: fedv1a1.APIResource{
 				Kind: fmt.Sprintf("Federated%sPlacement", kind),
 			},
-			Override: &fedv1a1.APIResource{
+			Override: fedv1a1.APIResource{
 				Kind: fmt.Sprintf("Federated%sOverride", kind),
 			},
 		},
@@ -339,7 +336,7 @@ func primitiveCRDs(typeConfig typeconfig.Interface, accessor schemaAccessor) ([]
 	crds = append(crds, CrdForAPIResource(typeConfig.GetPlacement(), placementSchema))
 
 	overrideSchema := overrideValidationSchema()
-	crds = append(crds, CrdForAPIResource(*typeConfig.GetOverride(), overrideSchema))
+	crds = append(crds, CrdForAPIResource(typeConfig.GetOverride(), overrideSchema))
 
 	return crds, nil
 }
