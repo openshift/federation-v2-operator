@@ -30,7 +30,8 @@ RUN rm -rf vendor/github.com/kubernetes-sigs/federation-v2
 RUN DOCKER_BUILD="/bin/sh -c " GIT_VERSION="0.0.4" make hyperfed
 
 # build stage 2: copy in binaries, add OLM manifest, labels, etc.
-FROM openshift/origin-base
+# FROM openshift/origin-base
+FROM openshift/ose-base:v4.0.0.20190116.192747
 
 # copy in binaries
 WORKDIR /root/
