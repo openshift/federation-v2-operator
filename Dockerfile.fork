@@ -21,5 +21,7 @@ COPY vendor/github.com/kubernetes-sigs/federation-v2/Makefile Makefile
 COPY vendor/github.com/kubernetes-sigs/federation-v2/pkg pkg
 COPY vendor/github.com/kubernetes-sigs/federation-v2/cmd cmd
 COPY vendor/github.com/kubernetes-sigs/federation-v2/test test
+COPY vendor/github.com/kubernetes-sigs/federation-v2/hack hack
+COPY vendor/github.com/kubernetes-sigs/federation-v2/scripts scripts
 COPY vendor vendor
 RUN rm -rf vendor/github.com/kubernetes-sigs/federation-v2
