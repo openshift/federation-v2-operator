@@ -10,7 +10,9 @@ RUN yum install -y make git
 ENV GOPATH /go
 ENV PATH $GOPATH/bin:/usr/local/go/bin:$PATH
 
+RUN mkdir -p /go/src/github.com/kubernetes-sigs/federation-v2
 WORKDIR /go/src/github.com/kubernetes-sigs/federation-v2
+RUN chgrp -R 0 /go/src/github.com/kubernetes-sigs/federation-v2 && chmod g+rwx /go/src/github.com/kubernetes-sigs/federation-v2
 
 # copy in git info to support recording version in binaries
 COPY .git/HEAD .git/HEAD
@@ -26,3 +28,4 @@ COPY vendor/github.com/kubernetes-sigs/federation-v2/scripts scripts
 COPY vendor/github.com/kubernetes-sigs/federation-v2/config config
 COPY vendor vendor
 RUN rm -rf vendor/github.com/kubernetes-sigs/federation-v2
+USER 1001
