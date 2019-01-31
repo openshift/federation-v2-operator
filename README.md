@@ -15,3 +15,7 @@ Federation v2 is deployed as an [operator](https://coreos.com/operators) using
   vendor directory
 - The `vendor/` directory holds a pinned version of federation-v2 and its
   dependencies
+
+### Continuous Integration
+
+- [Prow Status](https://deck-ci.svc.ci.openshift.org/?repo=openshift%2Ffederation-v2-operator)
