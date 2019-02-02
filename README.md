@@ -15,6 +15,11 @@ Federation v2 is deployed as an [operator](https://coreos.com/operators) using
   vendor directory
 - The `vendor/` directory holds a pinned version of federation-v2 and its
   dependencies
+- The `Dockerfile` in the root directory is used to build enterprise images and
+  performs binary builds only
+- The `Dockerfile.federation` file in the root directory is used to build an
+  image that contains the source for federation-v2 and is used to run vet
+  checks, unit, and e2e tests
 
 ### Continuous Integration
 
