@@ -1,0 +1,4 @@
+packageName: federation-v2
+channels:
+- name: alpha
+  currentCSV: federation-v2.v0.0.4

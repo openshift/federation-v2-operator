@@ -1,0 +1,9 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: federation
+  namespace: openshift-operator-lifecycle-manager
+spec:
+  sourceType: grpc
+  # Note: replace this with the location of your operator registry image
+  image: quay.io/pmorie/federation-operator-registry
