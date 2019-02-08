@@ -29,3 +29,21 @@ Federation v2 is deployed as an [operator](https://coreos.com/operators) using
 ### Continuous Integration
 
 - [Prow Status](https://deck-ci.svc.ci.openshift.org/?repo=openshift%2Ffederation-v2-operator)
+
+### Developing
+
+Use the `scripts/push-operator-registry.sh` script to push an image containing an operator registry:
+
+```
+$ ./scripts/push-operator-registry.sh pmorie
+Building operator registry with tag quay.io/pmorie/federation-operator-registry
+Sending build context to Docker daemon  53.34MB
+Step 1/4 : FROM quay.io/openshift/origin-operator-registry:latest
+...
+```
+
+OLM is configured via a `CatalogSource` that uses the operator registry image:
+
+```
+$ kubectl create -f olm-testing/catalog-source.yaml
+```
