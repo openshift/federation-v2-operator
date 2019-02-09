@@ -8,11 +8,16 @@ metadata:
 spec:
   displayName: FederationV2
   description: |
-    Kubernetes Federation V2 namespace-scoped installation
+    This deploys Federation V2 in a namespace-scoped configuration. After
+    installation, you must enable the API types you want Federation to manage
+    using `kubefed2 enable`.
+
+    Note, you must enable federation support for namespaces in this
+    configuration before other types will work. Use `kubefed2 enable namespaces`.
   version: 0.0.4
   maturity: alpha
   provider:
-    name: Red Hat, Inc
+    name: Red Hat
   labels:
     alm-owner-federation-v2: federation-v2
     alm-status-descriptors: federation-v2.v0.0.4
@@ -39,6 +44,12 @@ spec:
           - "*"
         - apiGroups:
           - core.federation.k8s.io
+          resources:
+          - "*"
+          verbs:
+          - "*"
+        - apiGroups:
+          - primitives.federation.k8s.io
           resources:
           - "*"
           verbs:
@@ -106,6 +117,8 @@ spec:
                     - --install-crds=false
                     - --limited-scope=true
                     - --registry-namespace=$(CLUSTER_REGISTRY_NAMESPACE)
+                    - -v=5
+                    - --logtostderr
                   imagePullPolicy: Always
                   env:
                   - name: FEDERATION_NAMESPACE
