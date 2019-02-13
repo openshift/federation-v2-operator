@@ -17,9 +17,6 @@ Federation v2 is deployed as an [operator](https://coreos.com/operators) using
   dependencies
 - The `Dockerfile` in the root directory is used to build enterprise images and
   performs binary builds only
-- The `Dockerfile.federation` file in the root directory is used to build an
-  image that contains the vendored source for `federation-v2` and is used to run
-  vet checks, unit, and e2e tests
 - The `manifests/` directory contains manifests to configure OLM to deploy
   federation-v2
 - The `olm-testing/` directory contains a `Dockerfile` for building an operator
