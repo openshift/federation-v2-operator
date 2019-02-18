@@ -21,10 +21,11 @@ import (
 	"strings"
 
 	"github.com/pborman/uuid"
+	"github.com/pkg/errors"
 
 	apiextv1b1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiextv1b1client "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1beta1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -128,11 +129,11 @@ func validateCrdCrud(f framework.FederationFramework, targetCrdKind string, name
 		tl.Fatalf("Timed out waiting for target type %q to be published as an available resource", targetName)
 	}
 
-	federateDirective := &federate.FederateDirective{
+	enableTypeDirective := &federate.EnableTypeDirective{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: targetAPIResource.Name,
 		},
-		Spec: federate.FederateDirectiveSpec{
+		Spec: federate.EnableTypeDirectiveSpec{
 			TargetVersion:    targetAPIResource.Version,
 			PrimitiveGroup:   targetAPIResource.Group,
 			PrimitiveVersion: targetAPIResource.Version,
@@ -140,7 +141,7 @@ func validateCrdCrud(f framework.FederationFramework, targetCrdKind string, name
 		},
 	}
 
-	resources, err := federate.GetResources(hostConfig, federateDirective)
+	resources, err := federate.GetResources(hostConfig, enableTypeDirective)
 	if err != nil {
 		tl.Fatalf("Error retrieving resources to enable federation of target type %q: %v", targetAPIResource.Kind, err)
 	}
@@ -191,7 +192,7 @@ overrides:
 		fixture := &unstructured.Unstructured{}
 		err = federate.DecodeYAML(strings.NewReader(fixtureYAML), fixture)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("Error reading test fixture: %v", err)
+			return nil, nil, nil, errors.Wrap(err, "Error reading test fixture")
 		}
 		return common.NewTestObjects(typeConfig, namespace, clusterNames, fixture)
 	}
@@ -207,7 +208,7 @@ func waitForCrd(config *rest.Config, tl common.TestLogger, apiResource metav1.AP
 	}
 	err = wait.PollImmediate(framework.PollInterval, framework.TestContext.SingleCallTimeout, func() (bool, error) {
 		_, err := client.Resources("invalid").Get("invalid", metav1.GetOptions{})
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			return true, nil
 		}
 		return (err == nil), err
