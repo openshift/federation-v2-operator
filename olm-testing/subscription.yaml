@@ -1,0 +1,11 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: federation
+  namespace: federation-test
+spec:
+  source: federation
+  sourceNamespace: openshift-operator-lifecycle-manager
+  name: federation
+  startingCSV: federation.v0.0.4
+  channel: alpha

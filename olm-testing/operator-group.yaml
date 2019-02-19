@@ -1,0 +1,8 @@
+apiVersion: operators.coreos.com/v1alpha2
+kind: OperatorGroup
+metadata:
+ name: federation
+ namespace: federation-test
+spec:
+ targetNamespaces:
+   - federation-test
