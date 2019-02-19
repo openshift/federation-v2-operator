@@ -3,12 +3,12 @@
 apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
-  name: federation-v2.v0.0.4
+  name: federation.v0.0.4
   namespace: placeholder
 spec:
-  displayName: FederationV2
+  displayName: Federation
   description: |
-    This deploys Federation V2 in a namespace-scoped configuration. After
+    This deploys Federation in a namespace-scoped configuration. After
     installation, you must enable the API types you want Federation to manage
     using `kubefed2 enable`.
 
@@ -19,8 +19,8 @@ spec:
   provider:
     name: Red Hat
   labels:
-    alm-owner-federation-v2: federation-v2
-    alm-status-descriptors: federation-v2.v0.0.4
+    alm-owner-federation: federation
+    alm-status-descriptors: federation.v0.0.4
   installModes:
   - type: OwnNamespace
     supported: true
