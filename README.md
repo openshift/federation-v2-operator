@@ -29,7 +29,47 @@ Federation v2 is deployed as an [operator](https://coreos.com/operators) using
 
 ### Developing
 
-Use the `scripts/push-operator-registry.sh` script to push an image containing an operator registry:
+Quick development guide follows.
+
+#### Prerequisites
+
+You must have:
+
+- An OpenShift 4.0 cluster and cluster-admin rights for that cluster
+  - The `federation-testing` namespace must exist in your cluster
+- Your own quay.io account
+- Under your quay.io account, these image repositories:
+  - `origin-federation-controller`
+  - `federation-operator-registry`
+- The `oc` binary in your `PATH`
+
+#### Local changes for your development flow
+
+You must first make a couple of changes locally:
+
+- You must alter the image refered to in the `manifests/federation/0.0.4` file
+  to refer to the image you build and push to an image registry you control
+- OLM is configured via a `CatalogSource` that uses the operator registry image.
+  This lives in the `olm-testing/catalog-source.yaml` file; to test/develop your
+  own instance of the operator, you will need to substitute the coordinates of
+  your operator registry image.
+
+#### Build the container image
+
+Build and push the container image to your `origin-federation-controller` image
+repository using this command:
+
+```
+$ docker build . -t <your image tag>
+$ docker push <your image tag>
+```
+
+For this step, use image tag `quay.io/<your quay account>/origin-federation-controller:v4.0.0`.
+
+#### Create an operator registry
+
+Use the `scripts/push-operator-registry.sh` script to push an image containing
+an operator registry:
 
 ```
 $ ./scripts/push-operator-registry.sh pmorie
@@ -39,8 +79,14 @@ Step 1/4 : FROM quay.io/openshift/origin-operator-registry:latest
 ...
 ```
 
-OLM is configured via a `CatalogSource` that uses the operator registry image:
+Note, this script accepts a parameter for the name of the repository to push to;
+use this to inject your quay account name.
 
-```
-$ kubectl create -f olm-testing/catalog-source.yaml
-```
+#### Install federation using OLM
+
+Run the `scripts/install-using-catalog-source.sh` script to install federation
+into the `federation-testing` namespace using OLM. This script:
+
+- Configures a `CatalogSource` for OLM that references the operator registry you built
+- Creates an `OperatorGroup` 
+- Creates a `Subscription` to the operator that drives OLM to install it in your namespace
