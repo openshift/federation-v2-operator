@@ -2,7 +2,7 @@
 
 # This script populates custom resource definitions for the OLM configuration
 # for federation in the 'manifests' directory from the vendored federation-v2
-# source.
+# helm chart.
 #
 # This script should be run from the root directory of the
 # federation-v2-operator repository.
@@ -14,7 +14,7 @@
 # 3. CRDs for the 'built-in' federation APIs that come with federation.
 
 FEDERATION_CHART_DIR=vendor/github.com/kubernetes-sigs/federation-v2/charts/federation-v2/
-PACKAGE=${PACKAGE:-"federation-v2"}
+PACKAGE=${PACKAGE:-"federation"}
 VERSION=${VERSION:-"0.0.4"}
 MANIFESTS_DIR=manifests/${PACKAGE}/${VERSION}
 
@@ -26,15 +26,15 @@ cp ${FEDERATION_CHART_DIR}/charts/clusterregistry/templates/crds.yaml ${MANIFEST
 # handle core federation CRDs; they are in the vendored federation-v2 repo in a
 # single file and must be split into individual files per resource in order for
 # the operator registry to handle them correctly.
-all_core_crds=${MANIFESTS_DIR}/federation-v2-core-all.crd.yaml
+all_core_crds=${MANIFESTS_DIR}/federation-core-all.crd.yaml
 cp ${FEDERATION_CHART_DIR}/charts/controllermanager/templates/crds.yaml ${all_core_crds}
-csplit ${all_core_crds} --prefix=${MANIFESTS_DIR}/federation-v2-core- -- /---/ {*}
+csplit ${all_core_crds} --prefix=${MANIFESTS_DIR}/federation-core- -- /---/ {*}
 rm -f ${all_core_crds}
-core_crds=$(find ${MANIFESTS_DIR} -name federation-v2-core*)
+core_crds=$(find ${MANIFESTS_DIR} -name federation-core*)
 for f in $core_crds
 do
   kind=$(grep kind: $f | head -n 2 | tail -n 1 | cut -b 11-)
-  mv -f $f ${MANIFESTS_DIR}/federation-v2-core-${kind}.crd.yaml
+  mv -f $f ${MANIFESTS_DIR}/federation-core-${kind}.crd.yaml
 done
 
 # For now, don't handle federation API CRDs.
