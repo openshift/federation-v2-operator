@@ -28,13 +28,13 @@ cp ${FEDERATION_CHART_DIR}/charts/clusterregistry/templates/crds.yaml ${MANIFEST
 # the operator registry to handle them correctly.
 all_core_crds=${MANIFESTS_DIR}/federation-core-all.crd.yaml
 cp ${FEDERATION_CHART_DIR}/charts/controllermanager/templates/crds.yaml ${all_core_crds}
-csplit ${all_core_crds} --prefix=${MANIFESTS_DIR}/federation-core- -- /---/ {*}
+csplit ${all_core_crds} --prefix=${MANIFESTS_DIR}/${PACKAGE}-core-split -- /---/ {*}
 rm -f ${all_core_crds}
-core_crds=$(find ${MANIFESTS_DIR} -name federation-core*)
+core_crds=$(find ${MANIFESTS_DIR} -name ${PACKAGE}-core-split*)
 for f in $core_crds
 do
   kind=$(grep kind: $f | head -n 2 | tail -n 1 | cut -b 11-)
-  mv -f $f ${MANIFESTS_DIR}/federation-core-${kind}.crd.yaml
+  mv -f $f ${MANIFESTS_DIR}/${PACKAGE}-core-${kind}.crd.yaml
 done
 
 # For now, don't handle federation API CRDs.
