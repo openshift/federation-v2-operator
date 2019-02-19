@@ -18,7 +18,6 @@ package common
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
@@ -26,6 +25,7 @@ import (
 	"github.com/kubernetes-sigs/federation-v2/pkg/apis/core/typeconfig"
 	fedv1a1 "github.com/kubernetes-sigs/federation-v2/pkg/apis/core/v1alpha1"
 	clientset "github.com/kubernetes-sigs/federation-v2/pkg/client/clientset/versioned"
+	"github.com/kubernetes-sigs/federation-v2/pkg/controller/sync"
 	versionmanager "github.com/kubernetes-sigs/federation-v2/pkg/controller/sync/version"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -101,25 +101,42 @@ func (c *FederatedTypeCrudTester) CheckLifecycle(desiredTemplate, desiredPlaceme
 	c.CheckDelete(template, &orphanDependents)
 }
 
-func (c *FederatedTypeCrudTester) Create(desiredTemplate, desiredPlacement, desiredOverride *unstructured.Unstructured) (*unstructured.Unstructured, *unstructured.Unstructured, *unstructured.Unstructured) {
+func (c *FederatedTypeCrudTester) Create(desiredTemplate, desiredPlacement, desiredOverride *unstructured.Unstructured) (template *unstructured.Unstructured, placement *unstructured.Unstructured, override *unstructured.Unstructured) {
+	isFederatedNamespace := c.typeConfig.GetTarget().Kind == util.NamespaceKind
+
+	if isFederatedNamespace {
+		// Namespace placement needs to have the same name as its namespace.
+		desiredPlacement.SetName(desiredPlacement.GetNamespace())
+	}
+
 	// Create placement and overrides first to ensure the sync
 	// controller will propagate the complete object the first time it
 	// sees the template.
 
-	placement := c.createFedResource(c.typeConfig.GetPlacement(), desiredPlacement)
+	placement = c.createFedResource(c.typeConfig.GetPlacement(), desiredPlacement)
 
 	// Test objects may use GenerateName.  Use the name of the
 	// placement resource for the other resources.
 	name := placement.GetName()
 
-	var override *unstructured.Unstructured
 	if desiredOverride != nil {
 		desiredOverride.SetName(name)
 		override = c.createFedResource(c.typeConfig.GetOverride(), desiredOverride)
 	}
 
-	desiredTemplate.SetName(name)
-	template := c.createFedResource(c.typeConfig.GetTemplate(), desiredTemplate)
+	if isFederatedNamespace {
+		// The test namespace already exists and need only be retrieved.
+		// TODO(marun) Consider removing the fixture for namespaces.
+		client := c.fedResourceClient(c.typeConfig.GetTemplate())
+		var err error
+		template, err = client.Resources("").Get(name, metav1.GetOptions{})
+		if err != nil {
+			c.tl.Fatalf("Unable to retrieve Namespace %q: %v", name, err)
+		}
+	} else {
+		desiredTemplate.SetName(name)
+		template = c.createFedResource(c.typeConfig.GetTemplate(), desiredTemplate)
+	}
 
 	return template, placement, override
 }
@@ -157,7 +174,7 @@ func (c *FederatedTypeCrudTester) fedResourceClient(apiResource metav1.APIResour
 func (c *FederatedTypeCrudTester) CheckCreate(desiredTemplate, desiredPlacement, desiredOverride *unstructured.Unstructured) (*unstructured.Unstructured, *unstructured.Unstructured, *unstructured.Unstructured) {
 	template, placement, override := c.Create(desiredTemplate, desiredPlacement, desiredOverride)
 
-	templateHash, err := versionmanager.GetTemplateHash(template)
+	templateHash, err := sync.GetTemplateHash(template)
 	if err != nil {
 		c.tl.Fatalf("Failed to compute template hash: %v", err)
 	}
@@ -416,7 +433,10 @@ func (c *FederatedTypeCrudTester) waitForResource(client util.ResourceClient, qu
 					if !ok {
 						c.tl.Fatalf("Missing overridden path %s", path)
 					}
-					if !reflect.DeepEqual(expectedValue, value) {
+					// Lacking type information for the override
+					// field, use string conversion as a cheap way to
+					// determine equality.
+					if fmt.Sprintf("%v", expectedValue) != fmt.Sprintf("%v", value) {
 						c.tl.Errorf("Expected field %s to be %q, got %q", path, expectedValue, value)
 						return false, nil
 					}
@@ -487,7 +507,7 @@ func (c *FederatedTypeCrudTester) expectedVersion(qualifiedName util.QualifiedNa
 	}
 
 	loggedWaiting := false
-	adapter := versionmanager.NewVersionAdapter(c.fedClient, c.typeConfig.GetNamespaced())
+	adapter := versionmanager.NewVersionAdapter(c.fedClient, c.typeConfig.GetFederatedNamespaced())
 	var version *fedv1a1.PropagatedVersionStatus
 	err := wait.PollImmediate(c.waitInterval, wait.ForeverTestTimeout, func() (bool, error) {
 		versionObj, err := adapter.Get(versionName)
@@ -519,7 +539,7 @@ func (c *FederatedTypeCrudTester) expectedVersion(qualifiedName util.QualifiedNa
 		return "", false
 	}
 
-	templateHash, err := versionmanager.GetTemplateHash(template)
+	templateHash, err := sync.GetTemplateHash(template)
 	if err != nil {
 		c.tl.Fatalf("Failed to compute template hash: %v", err)
 	}

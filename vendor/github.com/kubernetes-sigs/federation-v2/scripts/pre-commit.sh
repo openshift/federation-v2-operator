@@ -127,6 +127,9 @@ check-git-state
 echo "Verifying Gofmt"
 ./hack/go-tools/verify-gofmt.sh
 
+echo "Checking that correct Error Package is used."
+./hack/verify-errpkg.sh
+
 echo "Checking that 'kubebuilder generate' is up-to-date"
 check-kubebuilder-output
 
@@ -160,7 +163,7 @@ echo "Deploying federation-v2"
 ./scripts/deploy-federation.sh ${CONTAINER_REGISTRY_HOST}/federation-v2:e2e $(join-cluster-list)
 
 echo "Checking sync up status of helm chart"
-PATH="${PATH}:${base_dir}/bin" ./scripts/sync-up-helm-chart.sh
+BUILD_KUBEFED="false" PATH="${PATH}:${base_dir}/bin" ./scripts/sync-up-helm-chart.sh
 
 echo "Checking helm chart state of working tree"
 check-git-state

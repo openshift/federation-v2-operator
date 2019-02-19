@@ -18,11 +18,11 @@ package e2e
 
 import (
 	"context"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -92,6 +92,16 @@ var _ = Describe("Placement", func() {
 			crudTester.CheckDelete(template, &orphanDependents)
 		}()
 
+		// Wait until pending events for the templates have cleared
+		// from the controller queue to ensure that event handling for
+		// namespace placement is tested.  If a reconcile event
+		// remains in the queue a resource may be reconciled even in
+		// the absence of reconcile events being queued by a namespace
+		// placement event.
+		//
+		// TODO(marun) This is non-deterministic, revisit if it ends up being flakey.
+		time.Sleep(5 * time.Second)
+
 		namespace := f.TestNamespaceName()
 
 		dynclient, err := client.New(f.KubeConfig(), client.Options{})
@@ -99,21 +109,10 @@ var _ = Describe("Placement", func() {
 			tl.Fatalf("Error initializing dynamic client: %v", err)
 		}
 
-		namespacePlacement := &unstructured.Unstructured{}
-		placementAPIResource := f.NamespaceTypeConfigOrDie().GetPlacement()
-		namespacePlacement.SetGroupVersionKind(schema.GroupVersionKind{
-			Group:   placementAPIResource.Group,
-			Kind:    placementAPIResource.Kind,
-			Version: placementAPIResource.Version,
-		})
-		namespacePlacement.SetNamespace(namespace)
-		namespacePlacement.SetName(namespace)
+		// Ensure namespace placement selecting no clusters exist for
+		// the test namespace.
+		namespacePlacement := f.EnsureTestNamespacePlacement(false)
 		placementKey := util.NewQualifiedName(namespacePlacement).String()
-		err = dynclient.Create(context.Background(), namespacePlacement)
-		if err != nil {
-			tl.Fatalf("Error creating FederatedNamespacePlacement %q: %v", placementKey, err)
-		}
-		tl.Logf("Created new FederatedNamespacePlacement %q", placementKey)
 		// Ensure the removal of the namespace placement to avoid affecting other tests.
 		defer func() {
 			err := dynclient.Delete(context.Background(), namespacePlacement)
