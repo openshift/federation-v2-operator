@@ -3,7 +3,7 @@
 apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
-  name: federation.v0.0.4
+  name: federation.v0.0.5
   namespace: placeholder
 spec:
   displayName: Federation
@@ -14,13 +14,13 @@ spec:
 
     Note, you must enable federation support for namespaces in this
     configuration before other types will work. Use `kubefed2 enable namespaces`.
-  version: 0.0.4
+  version: 0.0.5
   maturity: alpha
   provider:
     name: Red Hat
   labels:
     alm-owner-federation: federation
-    alm-status-descriptors: federation.v0.0.4
+    alm-status-descriptors: federation.v0.0.5
   installModes:
   - type: OwnNamespace
     supported: true
@@ -102,7 +102,7 @@ spec:
             spec:
               containers:
                 - name: controller-manager
-                  image: quay.io/openshift/origin-federation-controller:v4.0.0
+                  image: quay.io/pmorie/origin-federation-controller:v4.0.0
                   resources:
                     limits:
                       cpu: 100m
