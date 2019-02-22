@@ -90,7 +90,6 @@ spec:
           - statefulsets
           verbs:
           - "*"
-      # TODO(font): use statefulset
       deployments:
       - name: federation-controller-manager
         spec:
@@ -105,7 +104,7 @@ spec:
             spec:
               containers:
                 - name: controller-manager
-                  image: quay.io/pmorie/origin-federation-controller:v4.0.0
+                  image: quay.io/openshift/origin-federation-controller:v4.0.0
                   resources:
                     limits:
                       cpu: 100m
