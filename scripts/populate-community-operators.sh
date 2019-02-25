@@ -11,11 +11,13 @@
 #   - src/github.com/openshift/federation-v2-operator
 #   - src/github.com/operator-framework/community-operators
 
+PACKAGE=${PACKAGE:-"federation"}
+
 dir=$(realpath "$(dirname "${BASH_SOURCE}")/..")
 community_operators_dir=$(realpath "${dir}/../../operator-framework/community-operators")
-target_dir="${community_operators_dir}/community-operators/federation"
+target_dir="${community_operators_dir}/community-operators/${PACKAGE}"
 rm -rf $target_dir
 mkdir -p $target_dir
 
-cp -r $dir/manifests/federation/0.0.5/* $target_dir
-cp $dir/manifests/federation/federation.package.yaml $target_dir
+cp -r $dir/manifests/${PACKAGE}/0.0.5/* $target_dir
+cp $dir/manifests/${PACKAGE}/${PACKAGE}.package.yaml $target_dir
