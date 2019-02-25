@@ -3,8 +3,11 @@
 apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
-  name: federation.v0.0.4
+  name: federation.v0.0.5
   namespace: placeholder
+  annotations:
+    categories: "OpenShift Optional, Integration & Delivery"
+    description: "Kubernetes Federation namespace-scoped installation"
 spec:
   displayName: Federation
   description: |
@@ -14,22 +17,22 @@ spec:
 
     Note, you must enable federation support for namespaces in this
     configuration before other types will work. Use `kubefed2 enable namespaces`.
-  version: 0.0.4
+  version: 0.0.5
   maturity: alpha
   provider:
     name: Red Hat
   labels:
     alm-owner-federation: federation
-    alm-status-descriptors: federation.v0.0.4
+    alm-status-descriptors: federation.v0.0.5
   installModes:
   - type: OwnNamespace
     supported: true
   - type: SingleNamespace
-    supported: true
+    supported: false
   - type: MultiNamespace
     supported: false
   - type: AllNamespaces
-    supported: true
+    supported: false
   install:
     strategy: deployment
     spec:
@@ -87,7 +90,6 @@ spec:
           - statefulsets
           verbs:
           - "*"
-      # TODO(font): use statefulset
       deployments:
       - name: federation-controller-manager
         spec:
@@ -135,8 +137,6 @@ spec:
               serviceAccount: federation-controller-manager
   customresourcedefinitions:
     owned:
-        # TODO(font): Move Cluster CRD to required once OLM supports CSVs
-        # without a deployment.
       - description: Represents an instance of a Cluster Registry
         displayName: Cluster Registry Application
         kind: Cluster
@@ -152,116 +152,6 @@ spec:
         kind: FederatedCluster
         name: federatedclusters.core.federation.k8s.io
         version: v1alpha1
-      # - description: Represents an instance of a FederatedConfigMap resource
-      #   displayName: FederatedConfigMap Resource
-      #   kind: FederatedConfigMap
-      #   name: federatedconfigmaps.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedConfigMapOverride resource
-      #   displayName: FederatedConfigMapOverride Resource
-      #   kind: FederatedConfigMapOverride
-      #   name: federatedconfigmapoverrides.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedConfigMapPlacement resource
-      #   displayName: FederatedConfigMapPlacement Resource
-      #   kind: FederatedConfigMapPlacement
-      #   name: federatedconfigmapplacements.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedDeployment resource
-      #   displayName: FederatedDeployment Resource
-      #   kind: FederatedDeployment
-      #   name: federateddeployments.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedDeploymentOverride resource
-      #   displayName: FederatedDeploymentOverride Resource
-      #   kind: FederatedDeploymentOverride
-      #   name: federateddeploymentoverrides.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedDeploymentPlacement resource
-      #   displayName: FederatedDeploymentPlacement Resource
-      #   kind: FederatedDeploymentPlacement
-      #   name: federateddeploymentplacements.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedIngress resource
-      #   displayName: FederatedIngress Resource
-      #   kind: FederatedIngress
-      #   name: federatedingresses.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedIngressPlacement resource
-      #   displayName: FederatedIngressPlacement Resource
-      #   kind: FederatedIngressPlacement
-      #   name: federatedingressplacements.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedJob resource
-      #   displayName: FederatedJob Resource
-      #   kind: FederatedJob
-      #   name: federatedjobs.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedJobOverride resource
-      #   displayName: FederatedJobOverride Resource
-      #   kind: FederatedJobOverride
-      #   name: federatedjoboverrides.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedJobPlacement resource
-      #   displayName: FederatedJobPlacement Resource
-      #   kind: FederatedJobPlacement
-      #   name: federatedjobplacements.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedNamespacePlacement resource
-      #   displayName: FederatedNamespacePlacement Resource
-      #   kind: FederatedNamespacePlacement
-      #   name: federatednamespaceplacements.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedReplicaSet resource
-      #   displayName: FederatedReplicaSet Resource
-      #   kind: FederatedReplicaSet
-      #   name: federatedreplicasets.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedReplicaSetOverride resource
-      #   displayName: FederatedReplicaSetOverride Resource
-      #   kind: FederatedReplicaSetOverride
-      #   name: federatedreplicasetoverrides.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedReplicaSetPlacement resource
-      #   displayName: FederatedReplicaSetPlacement Resource
-      #   kind: FederatedReplicaSetPlacement
-      #   name: federatedreplicasetplacements.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedSecret resource
-      #   displayName: FederatedSecret Resource
-      #   kind: FederatedSecret
-      #   name: federatedsecrets.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedSecretOverride resource
-      #   displayName: FederatedSecretOverride Resource
-      #   kind: FederatedSecretOverride
-      #   name: federatedsecretoverrides.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedSecretPlacement resource
-      #   displayName: FederatedSecretPlacement Resource
-      #   kind: FederatedSecretPlacement
-      #   name: federatedsecretplacements.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedService resource
-      #   displayName: FederatedService Resource
-      #   kind: FederatedService
-      #   name: federatedservices.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedServiceAccount resource
-      #   displayName: FederatedServiceAccount Resource
-      #   kind: FederatedServiceAccount
-      #   name: federatedserviceaccounts.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedServiceAccountPlacement resource
-      #   displayName: FederatedServiceAccountPlacement Resource
-      #   kind: FederatedServiceAccountPlacement
-      #   name: federatedserviceaccountplacements.core.federation.k8s.io
-      #   version: v1alpha1
-      # - description: Represents an instance of a FederatedServicePlacement resource
-      #   displayName: FederatedServicePlacement Resource
-      #   kind: FederatedServicePlacement
-      #   name: federatedserviceplacements.core.federation.k8s.io
-      #   version: v1alpha1
       - description: Represents an instance of a FederationV2 sync controller
         displayName: FederationV2 Push Reconciler Application
         kind: FederatedTypeConfig

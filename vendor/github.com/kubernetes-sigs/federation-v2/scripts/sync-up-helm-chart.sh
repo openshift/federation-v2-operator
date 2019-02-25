@@ -20,6 +20,7 @@ set -o pipefail
 
 source "$(dirname "${BASH_SOURCE}")/util.sh"
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." ; pwd)"
 WORKDIR=$(mktemp -d)
 NS="${FEDERATION_NAMESPACE:-federation-system}"
 CHART_FEDERATED_CRD_DIR="${CHART_FEDERATED_CRD_DIR:-charts/federation-v2/charts/controllermanager/templates}"
@@ -27,6 +28,11 @@ CHART_FEDERATED_PROPAGATION_DIR="${CHART_FEDERATED_PROPAGATION_DIR:-charts/feder
 INSTALL_CRDS_YAML="${INSTALL_CRDS_YAML:-hack/install-crds-latest.yaml}"
 
 INSTALL_CRDS_YAML="${INSTALL_CRDS_YAML}" scripts/generate-install-crds-yaml.sh
+
+BUILD_KUBEFED="${BUILD_KUBEFED:-true}"
+if [[ "${BUILD_KUBEFED}" == true ]]; then
+  make -C "${ROOT_DIR}" kubefed2
+fi
 
 # "diff -U 4" will take 1 as return code which will cause the script failed to execute, here
 # I was force returning true to get a return code as 0.
@@ -60,8 +66,8 @@ util::wait-for-condition 'ok' "curl http://127.0.0.1:2379/version &> /dev/null" 
 util::wait-for-condition 'ok' "kubectl --kubeconfig ${WORKDIR}/kubeconfig --context federation get --raw=/healthz &> /dev/null" 60
 
 # Generate YAML templates to enable resource propagation for helm chart.
-for filename in ./config/federatedirectives/*.yaml; do
-  ./bin/kubefed2 --kubeconfig ${WORKDIR}/kubeconfig federate enable -f "${filename}" --federation-namespace="${NS}" --host-cluster-context federation -o yaml > ${CHART_FEDERATED_PROPAGATION_DIR}/$(basename $filename)
+for filename in ./config/enabletypedirectives/*.yaml; do
+  ./bin/kubefed2 --kubeconfig ${WORKDIR}/kubeconfig enable -f "${filename}" --federation-namespace="${NS}" --host-cluster-context federation -o yaml > ${CHART_FEDERATED_PROPAGATION_DIR}/$(basename $filename)
 done
 
 # Clean kube-apiserver daemons and temporary files
