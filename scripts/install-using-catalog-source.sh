@@ -7,6 +7,12 @@
 
 dir=$(realpath "$(dirname "${BASH_SOURCE}")/..")
 
-oc create -f $dir/olm-testing/catalog-source.yaml
-oc create -f $dir/olm-testing/operator-group.yaml
-oc create -f $dir/olm-testing/subscription.yaml
+registry=${REGISTRY:-$1}
+if [[ -z "${registry}" ]]; then
+  echo "registry must be set by running \`install-using-catalog-source.sh <registry>\` or by setting \$REGISTRY"
+  exit 1
+fi
+
+sed -e "s,quay.io/openshift/federation-operator-registry,quay.io/$registry/federation-operator-registry," $dir/olm-testing/catalog-source.yaml | oc apply -f -
+oc apply -f $dir/olm-testing/operator-group.yaml
+oc apply -f $dir/olm-testing/subscription.yaml
