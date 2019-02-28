@@ -6,17 +6,26 @@ metadata:
   name: federation.v0.0.5
   namespace: placeholder
   annotations:
+    capabilities: Basic Install
     categories: "OpenShift Optional, Integration & Delivery"
-    description: "Kubernetes Federation namespace-scoped installation"
+    description: Gain Hybrid Cloud capabilities between your clusters with Kubernetes Federation.
+    certified: "false"
+    containerImage: "quay.io/openshift/origin-federation-controller:v4.0.0"
+    createdAt: "2019-01-01T00:00:00Z"
 spec:
   displayName: Federation
   description: |
-    This deploys Federation in a namespace-scoped configuration. After
-    installation, you must enable the API types you want Federation to manage
-    using `kubefed2 enable`.
+    Kubernetes Federation is a tool to sync (aka "federate") a set of Kubernetes objects from a "source" into a set of other clusters. Common use-cases include federating Namespaces across all of your clusters or rolling out an application across several geographically distributed clusters.
+    The Kubernetes Federation Operator runs all of the components under the hood to quickly get up and running with this powerful concept. Federation is a key part of any Hybrid Cloud capability.
 
-    Note, you must enable federation support for namespaces in this
-    configuration before other types will work. Use `kubefed2 enable namespaces`.
+    ### Using Federation
+    After configuring and starting your Federation instance, use the command line tool to enable each type of object you would like federated to all of your clusters.
+    This deploys Federation in a namespace-scoped configuration. This means that only objects that share the Namespace where your Federation instance is deployed can be federated. You must enable Federation support for Namespaces in this configuration before other types will work. Use `kubefed2 enable namespaces`.
+
+    Next, use `kubefed2 enable <API type>` for the other objects you would like to federate.
+    Finally, [register the other clusters](https://github.com/kubernetes-sigs/federation-v2/blob/master/docs/userguide.md#join-clusters) that will be federated to.
+    See the [full user guide](https://github.com/kubernetes-sigs/federation-v2/blob/master/docs/userguide.md) for other capabilities of Federation.
+  keywords: ['kubernetes', 'federation', 'hybrid', 'hybrid cloud', 'multi-cluster', 'cluster']
   version: 0.0.5
   maturity: alpha
   provider:
