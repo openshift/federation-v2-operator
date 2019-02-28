@@ -5,4 +5,7 @@ metadata:
   namespace: openshift-operator-lifecycle-manager
 spec:
   sourceType: grpc
+  # Note, this image is not a real one. For development, use the
+  # scripts/install-using-catalog-source.sh script to do a scripted installation
+  # using images in an image registry you control.
   image: quay.io/openshift/federation-operator-registry

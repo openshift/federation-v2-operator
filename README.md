@@ -29,7 +29,9 @@ Federation v2 is deployed as an [operator](https://coreos.com/operators) using
 
 ### Developing
 
-Quick development guide follows.
+This project has tooling allowing you to develop against your own image
+repositories without having to make local changes. Quick development guide
+follows.
 
 #### Prerequisites
 
@@ -42,17 +44,6 @@ You must have:
   - `origin-federation-controller`
   - `federation-operator-registry`
 - The `oc` binary in your `PATH`
-
-#### Local changes for your development flow
-
-You must first make a couple of changes locally:
-
-- You must alter the image refered to in the `manifests/federation/0.0.4` file
-  to refer to the image you build and push to an image registry you control
-- OLM is configured via a `CatalogSource` that uses the operator registry image.
-  This lives in the `olm-testing/catalog-source.yaml` file; to test/develop your
-  own instance of the operator, you will need to substitute the coordinates of
-  your operator registry image.
 
 #### Build the container image
 
