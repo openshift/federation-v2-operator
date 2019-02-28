@@ -36,7 +36,7 @@ Quick development guide follows.
 You must have:
 
 - An OpenShift 4.0 cluster and cluster-admin rights for that cluster
-  - The `federation-testing` namespace must exist in your cluster
+  - The `federation-test` namespace must exist in your cluster
 - Your own quay.io account
 - Under your quay.io account, these image repositories:
   - `origin-federation-controller`
@@ -59,17 +59,17 @@ You must first make a couple of changes locally:
 Build and push the container image to your `origin-federation-controller` image
 repository using this command:
 
-```
-$ docker build . -t <your image tag>
-$ docker push <your image tag>
-```
-
 For this step, use image tag `quay.io/<your quay account>/origin-federation-controller:v4.0.0`.
+
+```
+$ docker build . -t quay.io/<your quay account>/origin-federation-controller:v4.0.0
+$ docker push quay.io/<your quay account>/origin-federation-controller:v4.0.0
+```
 
 #### Create an operator registry
 
 Use the `scripts/push-operator-registry.sh` script to push an image containing
-an operator registry:
+an operator registry. This script takes your quay account name as an argument:
 
 ```
 $ ./scripts/push-operator-registry.sh pmorie
@@ -85,7 +85,17 @@ use this to inject your quay account name.
 #### Install federation using OLM
 
 Run the `scripts/install-using-catalog-source.sh` script to install federation
-into the `federation-testing` namespace using OLM. This script:
+into the `federation-test` namespace using OLM. This script also takes your
+quay account name as an argument:
+
+```
+$ scripts/install-using-catalog-source.sh pmorie
+catalogsource.operators.coreos.com/federation unchanged
+operatorgroup.operators.coreos.com/federation unchanged
+subscription.operators.coreos.com/federation unchanged
+```
+
+This script:
 
 - Configures a `CatalogSource` for OLM that references the operator registry you built
 - Creates an `OperatorGroup` 

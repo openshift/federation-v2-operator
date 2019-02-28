@@ -12,8 +12,9 @@ if [[ -z "${registry}" ]]; then
   exit 1
 fi
 
-tag="quay.io/$registry/federation-operator-registry"
+new_image_name=quay.io/$registry/origin-federation-controller
+tag="quay.io/$registry/federation-operator-registry:v4.0.0"
 echo "Building operator registry with tag $tag"
-docker build . -f olm-testing/Dockerfile -t $tag
+docker build . -f olm-testing/Dockerfile -t $tag --build-arg new_image_name=$new_image_name
 echo "Pushing $tag"
 docker push $tag
