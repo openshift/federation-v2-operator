@@ -26,12 +26,13 @@ Federation v2 is deployed as an [operator](https://coreos.com/operators) using
 ### Continuous Integration
 
 - [Prow Status](https://deck-ci.svc.ci.openshift.org/?repo=openshift%2Ffederation-v2-operator)
+- [ci-operator configuration](https://github.com/openshift/release/blob/master/ci-operator/config/openshift/federation-v2-operator/openshift-federation-v2-operator-master.yaml)
 
 ### Developing
 
 This project has tooling allowing you to develop against your own image
-repositories without having to make local changes. Quick development guide
-follows.
+repositories in [quay.io](quay.io) without having to make local changes. Quick
+development guide follows.
 
 #### Prerequisites
 
@@ -39,8 +40,7 @@ You must have:
 
 - An OpenShift 4.0 cluster and cluster-admin rights for that cluster
   - The `federation-test` namespace must exist in your cluster
-- Your own quay.io account
-- Under your quay.io account, these image repositories:
+- Your own quay.io account and the following image repositories under that account:
   - `origin-federation-controller`
   - `federation-operator-registry`
 - The `oc` binary in your `PATH`
@@ -60,7 +60,7 @@ $ docker push quay.io/<your quay account>/origin-federation-controller:v4.0.0
 #### Create an operator registry
 
 Use the `scripts/push-operator-registry.sh` script to push an image containing
-an operator registry. This script takes your quay account name as an argument:
+an operator registry. This script takes your quay.io account name as an argument:
 
 ```
 $ ./scripts/push-operator-registry.sh pmorie
@@ -77,7 +77,7 @@ use this to inject your quay account name.
 
 Run the `scripts/install-using-catalog-source.sh` script to install federation
 into the `federation-test` namespace using OLM. This script also takes your
-quay account name as an argument:
+quay.io account name as an argument:
 
 ```
 $ scripts/install-using-catalog-source.sh pmorie
