@@ -1,0 +1,26 @@
+# Makefile.ci holds make directives called by the CI jobs for this repo.
+
+populate-federation-gopath:
+	./scripts/populate-federation-gopath.sh
+
+.ONESHELL:
+unit: populate-federation-gopath
+	cd /go/src/github.com/kubernetes-sigs/federation-v2
+	go list ./pkg/... | grep -v v1alpha1 | xargs go test
+
+.ONESHELL:
+vet: populate-federation-gopath
+	cd /go/src/github.com/kubernetes-sigs/federation-v2
+	$(MAKE) vet
+
+.ONESHELL:
+managed-e2e: populate-federation-gopath
+	cd /go/src/github.com/kubernetes-sigs/federation-v2
+	./scripts/download-binaries.sh
+	TEST_ASSET_PATH="/go/src/github.com/kubernetes-sigs/federation-v2/bin" \
+	TEST_ASSET_ETCD="/go/src/github.com/kubernetes-sigs/federation-v2/bin/etcd" \
+	TEST_ASSET_KUBE_APISERVER="/go/src/github.com/kubernetes-sigs/federation-v2/bin/kube-apiserver" \
+	go test -v ./test/e2e -args -ginkgo.v -single-call-timeout=1m -ginkgo.trace -ginkgo.randomizeAllSpecs
+
+olm-e2e: populate-federation-gopath
+	echo "OK"
