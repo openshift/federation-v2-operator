@@ -14,7 +14,6 @@
 # If the second argument is omitted, the default will be 'namespaced'.
 
 dir=$(realpath "$(dirname "${BASH_SOURCE}")/..")
-kubectl=${KUBECTL:-"kubectl"}
 
 registry=${REGISTRY:-$1}
 if [[ -z "${registry}" ]]; then
@@ -29,6 +28,12 @@ if ! [[ "${subscription_types[@]}" =~ (^|[[:space:]])"$subscription_type"($|[[:s
   exit 1
 fi
 
-sed -e "s,quay.io/openshift/federation-operator-registry,quay.io/$registry/federation-operator-registry," $dir/olm-testing/catalog-source.yaml | oc apply -f -
-$kubectl apply -f $dir/olm-testing/${subscription_type}-operator-group.yaml
-$kubectl apply -f $dir/olm-testing/${subscription_type}-subscription.yaml
+new_image_name="quay.io/$registry/federation-operator-registry:v4.0.0"
+if [[ ! -z "$OVERRIDE_IMAGE" ]]; then
+  new_image_name="$registry"
+fi
+
+sed -e "s,quay.io/openshift/federation-operator-registry:v4.0.0,$new_image_name," \
+  $dir/olm-testing/catalog-source.yaml | oc apply -f -
+oc apply -f $dir/olm-testing/${subscription_type}-operator-group.yaml
+oc apply -f $dir/olm-testing/${subscription_type}-subscription.yaml

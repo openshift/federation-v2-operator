@@ -22,5 +22,6 @@ managed-e2e: populate-federation-gopath
 	TEST_ASSET_KUBE_APISERVER="/go/src/github.com/kubernetes-sigs/federation-v2/bin/kube-apiserver" \
 	go test -v ./test/e2e -args -ginkgo.v -single-call-timeout=1m -ginkgo.trace -ginkgo.randomizeAllSpecs
 
+.EXPORT_ALL_VARIABLES:
 olm-e2e: populate-federation-gopath
-	echo "OK"
+	IN_CI=1 scripts/olm-e2e.sh

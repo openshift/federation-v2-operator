@@ -37,6 +37,7 @@ do
   mv -f $f ${MANIFESTS_DIR}/${PACKAGE}-core-${kind}.crd.yaml
 done
 
+
 # For now, don't handle federation API CRDs.
 #
 # There is work required to be able to deploy the FederatedTypeConfigs required
