@@ -76,14 +76,15 @@ use this to inject your quay account name.
 #### Install federation using OLM
 
 Run the `scripts/install-using-catalog-source.sh` script to install federation
-into the `federation-test` namespace using OLM. This script also takes your
-quay.io account name as an argument:
+into the `federation-test` namespace using OLM. This script takes your quay
+account name as an argument, and optionally the type of deployment to subscribe
+to:
 
 ```
-$ scripts/install-using-catalog-source.sh pmorie
-catalogsource.operators.coreos.com/federation unchanged
-operatorgroup.operators.coreos.com/federation unchanged
-subscription.operators.coreos.com/federation unchanged
+$ scripts/install-using-catalog-source.sh pmorie <namespaced|cluster-scoped>
+catalogsource.operators.coreos.com/federation created
+operatorgroup.operators.coreos.com/namespaced-federation created
+subscription.operators.coreos.com/namespaced-federation-sub created
 ```
 
 This script:
@@ -91,3 +92,13 @@ This script:
 - Configures a `CatalogSource` for OLM that references the operator registry you built
 - Creates an `OperatorGroup` 
 - Creates a `Subscription` to the operator that drives OLM to install it in your namespace
+
+Note, if you run this script without an argument, you will get federation
+deployed in a namespaced scope. To deploy the cluster-scoped version, you should run:
+
+```
+$ ./scripts/install-using-catalog-source.sh pmorie cluster-scoped
+catalogsource.operators.coreos.com/federation created
+operatorgroup.operators.coreos.com/cluster-scoped-federation created
+subscription.operators.coreos.com/cluster-scoped-federation-sub created
+```
