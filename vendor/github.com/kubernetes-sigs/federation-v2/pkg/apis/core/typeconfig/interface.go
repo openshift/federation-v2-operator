@@ -17,7 +17,6 @@ limitations under the License.
 package typeconfig
 
 import (
-	"github.com/kubernetes-sigs/federation-v2/pkg/apis/core/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -26,13 +25,9 @@ type Interface interface {
 	GetObjectMeta() metav1.ObjectMeta
 	GetTarget() metav1.APIResource
 	GetNamespaced() bool
-	GetComparisonField() common.VersionComparisonField
 	GetPropagationEnabled() bool
-	GetTemplate() metav1.APIResource
-	GetPlacement() metav1.APIResource
-	GetOverride() metav1.APIResource
+	GetFederatedType() metav1.APIResource
 	GetStatus() *metav1.APIResource
 	GetEnableStatus() bool
 	GetFederatedNamespaced() bool
-	GetFederatedKind() string
 }

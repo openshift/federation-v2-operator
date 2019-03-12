@@ -29,13 +29,22 @@ const (
 
 	ServiceKind = "Service"
 
+	ServiceAccountKind = "ServiceAccount"
+
 	// The following fields are used to interact with unstructured
 	// resources.
 
 	// Common fields
 	SpecField = "spec"
 
+	// ServiceAccount fields
+	SecretsField = "secrets"
+
+	// Template fields
+	TemplateField = "template"
+
 	// Placement fields
+	PlacementField       = "placement"
 	ClusterNamesField    = "clusterNames"
 	ClusterSelectorField = "clusterSelector"
 
