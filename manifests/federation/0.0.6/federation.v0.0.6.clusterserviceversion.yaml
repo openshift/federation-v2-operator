@@ -76,7 +76,7 @@ spec:
           verbs:
           - "*"
         - apiGroups:
-          - primitives.federation.k8s.io
+          - types.federation.k8s.io
           resources:
           - "*"
           verbs:

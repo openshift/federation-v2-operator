@@ -46,7 +46,7 @@ spec:
     Finally, [register the other clusters](https://github.com/kubernetes-sigs/federation-v2/blob/master/docs/userguide.md#join-clusters) that will be federated to.
     See the [full user guide](https://github.com/kubernetes-sigs/federation-v2/blob/master/docs/userguide.md) for other capabilities of Federation.
   keywords: ['kubernetes', 'federation', 'hybrid', 'hybrid cloud', 'multi-cluster', 'cluster']
-  version: 0.0.5
+  version: 0.0.6
   maturity: alpha
   provider:
     name: Red Hat
@@ -82,7 +82,7 @@ spec:
           verbs:
           - "*"
         - apiGroups:
-          - primitives.federation.k8s.io
+          - types.federation.k8s.io
           resources:
           - "*"
           verbs:
