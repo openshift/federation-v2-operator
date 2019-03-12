@@ -43,7 +43,7 @@ USER 1001
 # TODO: copy in OLM manifests
 # ADD manifests/ /manifests
 
-ENTRYPOINT [".controller-manager"]
+ENTRYPOINT ["/root/controller-manager"]
 CMD ["--install-crds=false"]
 
 # apply labels to final image
