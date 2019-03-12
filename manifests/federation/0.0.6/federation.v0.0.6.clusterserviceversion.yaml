@@ -3,7 +3,7 @@
 apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
-  name: federation.v0.0.5
+  name: federation.v0.0.6
   namespace: placeholder
   annotations:
     capabilities: Basic Install
@@ -41,13 +41,13 @@ spec:
     Finally, [register the other clusters](https://github.com/kubernetes-sigs/federation-v2/blob/master/docs/userguide.md#join-clusters) that will be federated to.
     See the [full user guide](https://github.com/kubernetes-sigs/federation-v2/blob/master/docs/userguide.md) for other capabilities of Federation.
   keywords: ['kubernetes', 'federation', 'hybrid', 'hybrid cloud', 'multi-cluster', 'cluster']
-  version: 0.0.5
+  version: 0.0.6
   maturity: alpha
   provider:
     name: Red Hat
   labels:
     alm-owner-federation: federation
-    alm-status-descriptors: federation.v0.0.5
+    alm-status-descriptors: federation.v0.0.6
   installModes:
   - type: OwnNamespace
     supported: true
