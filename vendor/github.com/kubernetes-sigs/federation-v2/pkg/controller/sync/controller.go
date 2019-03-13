@@ -56,9 +56,6 @@ type FederationSyncController struct {
 	// For updating members of federation.
 	updater util.FederatedUpdater
 
-	// Helper for propagated version comparison for resource types.
-	comparisonHelper util.ComparisonHelper
-
 	// For events
 	eventRecorder record.EventRecorder
 
@@ -73,22 +70,23 @@ type FederationSyncController struct {
 }
 
 // StartFederationSyncController starts a new sync controller for a type config
-func StartFederationSyncController(controllerConfig *util.ControllerConfig, stopChan <-chan struct{}, typeConfig typeconfig.Interface, namespacePlacement *metav1.APIResource) error {
-	controller, err := newFederationSyncController(controllerConfig, typeConfig, namespacePlacement)
+func StartFederationSyncController(controllerConfig *util.ControllerConfig, stopChan <-chan struct{}, typeConfig typeconfig.Interface, fedNamespaceAPIResource *metav1.APIResource) error {
+	controller, err := newFederationSyncController(controllerConfig, typeConfig, fedNamespaceAPIResource)
 	if err != nil {
 		return err
 	}
 	if controllerConfig.MinimizeLatency {
 		controller.minimizeLatency()
 	}
-	glog.Infof(fmt.Sprintf("Starting sync controller for %q", typeConfig.GetFederatedKind()))
+	glog.Infof(fmt.Sprintf("Starting sync controller for %q", typeConfig.GetFederatedType().Kind))
 	controller.Run(stopChan)
 	return nil
 }
 
 // newFederationSyncController returns a new sync controller for the configuration
-func newFederationSyncController(controllerConfig *util.ControllerConfig, typeConfig typeconfig.Interface, namespacePlacement *metav1.APIResource) (*FederationSyncController, error) {
-	userAgent := fmt.Sprintf("%s-controller", strings.ToLower(typeConfig.GetFederatedKind()))
+func newFederationSyncController(controllerConfig *util.ControllerConfig, typeConfig typeconfig.Interface, fedNamespaceAPIResource *metav1.APIResource) (*FederationSyncController, error) {
+	federatedTypeAPIResource := typeConfig.GetFederatedType()
+	userAgent := fmt.Sprintf("%s-controller", strings.ToLower(federatedTypeAPIResource.Kind))
 
 	// Initialize non-dynamic clients first to avoid polluting config
 	fedClient, kubeClient, crClient := controllerConfig.AllClients(userAgent)
@@ -114,12 +112,6 @@ func newFederationSyncController(controllerConfig *util.ControllerConfig, typeCo
 	s.clusterDeliverer = util.NewDelayingDeliverer()
 
 	targetAPIResource := typeConfig.GetTarget()
-
-	var err error
-	s.comparisonHelper, err = util.NewComparisonHelper(typeConfig.GetComparisonField())
-	if err != nil {
-		return nil, err
-	}
 
 	// Federated informer on the resource type in members of federation.
 	s.informer = util.NewFederatedInformer(
@@ -152,7 +144,7 @@ func newFederationSyncController(controllerConfig *util.ControllerConfig, typeCo
 			if err != nil {
 				return "", err
 			}
-			return s.comparisonHelper.GetVersion(createdObj), err
+			return util.ObjectVersion(createdObj), err
 		},
 		func(client util.ResourceClient, rawObj pkgruntime.Object) (string, error) {
 			obj := rawObj.(*unstructured.Unstructured)
@@ -160,7 +152,7 @@ func newFederationSyncController(controllerConfig *util.ControllerConfig, typeCo
 			if err != nil {
 				return "", err
 			}
-			return s.comparisonHelper.GetVersion(updatedObj), err
+			return util.ObjectVersion(updatedObj), err
 		},
 		func(client util.ResourceClient, obj pkgruntime.Object) (string, error) {
 			qualifiedName := util.NewQualifiedName(obj)
@@ -168,8 +160,9 @@ func newFederationSyncController(controllerConfig *util.ControllerConfig, typeCo
 			return "", client.Resources(qualifiedName.Namespace).Delete(qualifiedName.Name, &metav1.DeleteOptions{OrphanDependents: &orphanDependents})
 		})
 
+	var err error
 	s.fedAccessor, err = NewFederatedResourceAccessor(
-		controllerConfig, typeConfig, namespacePlacement,
+		controllerConfig, typeConfig, fedNamespaceAPIResource,
 		fedClient, s.worker.EnqueueObject, s.informer, s.updater)
 	if err != nil {
 		return nil, err
@@ -212,6 +205,8 @@ func (s *FederationSyncController) isSynced() bool {
 		return false
 	}
 	if !s.fedAccessor.HasSynced() {
+		// The fed accessor will have logged why sync is not yet
+		// complete.
 		return false
 	}
 
@@ -251,20 +246,19 @@ func (s *FederationSyncController) reconcile(qualifiedName util.QualifiedName) u
 		return util.StatusAllOK
 	}
 
+	kind := s.typeConfig.GetFederatedType().Kind
 	key := fedResource.FederatedName().String()
 
-	federatedKind := s.typeConfig.GetFederatedKind()
-	glog.V(4).Infof("Starting to reconcile %s %q", federatedKind, key)
+	glog.V(4).Infof("Starting to reconcile %s %q", kind, key)
 	startTime := time.Now()
-	defer glog.V(4).Infof("Finished reconciling %s %q (duration: %v)", federatedKind, key, time.Since(startTime))
+	defer glog.V(4).Infof("Finished reconciling %s %q (duration: %v)", kind, key, time.Since(startTime))
 
-	finalizationKind := fedResource.FinalizationKind()
 	if fedResource.MarkedForDeletion() {
-		glog.V(3).Infof("Handling deletion of %s %q", finalizationKind, key)
+		glog.V(3).Infof("Handling deletion of %s %q", kind, key)
 		err := fedResource.EnsureDeletion()
 		if err != nil {
 			msg := "Failed to delete %s %q: %v"
-			args := []interface{}{finalizationKind, key, err}
+			args := []interface{}{kind, key, err}
 			runtime.HandleError(errors.Errorf(msg, args...))
 			s.eventRecorder.Eventf(fedResource.Object(), corev1.EventTypeWarning, "DeleteFailed", msg, args...)
 			return util.StatusError
@@ -272,10 +266,10 @@ func (s *FederationSyncController) reconcile(qualifiedName util.QualifiedName) u
 		// It should now be possible to garbage collect the finalization target.
 		return util.StatusAllOK
 	}
-	glog.V(3).Infof("Ensuring finalizers exist on %s %q", finalizationKind, key)
+	glog.V(3).Infof("Ensuring finalizers exist on %s %q", kind, key)
 	err = fedResource.EnsureFinalizers()
 	if err != nil {
-		runtime.HandleError(errors.Wrapf(err, "Failed to ensure finalizers for %s %q", finalizationKind, key))
+		runtime.HandleError(errors.Wrapf(err, "Failed to ensure finalizers for %s %q", kind, key))
 		return util.StatusError
 	}
 
@@ -285,7 +279,7 @@ func (s *FederationSyncController) reconcile(qualifiedName util.QualifiedName) u
 // syncToClusters ensures that the state of the given object is synchronized to
 // member clusters.
 func (s *FederationSyncController) syncToClusters(fedResource FederatedResource) util.ReconciliationStatus {
-	kind := s.typeConfig.GetFederatedKind()
+	kind := s.typeConfig.GetFederatedType().Kind
 	key := fedResource.FederatedName().String()
 
 	clusters, err := s.informer.GetReadyClusters()
@@ -385,24 +379,8 @@ func (s *FederationSyncController) clusterOperations(selectedClusters, unselecte
 			}
 
 			version, ok := versionMap[clusterName]
-			if !ok {
-				// No target version recorded for federated resource
+			if !ok || util.ObjectNeedsUpdate(desiredObj, clusterObj, version) {
 				operationType = util.OperationTypeUpdate
-			} else {
-				targetVersion := s.comparisonHelper.GetVersion(clusterObj)
-
-				// Check if versions don't match. If they match then check its
-				// ObjectMeta which only applies to resources where Generation
-				// is used to track versions because Generation is only updated
-				// when Spec changes.
-				if version != targetVersion {
-					operationType = util.OperationTypeUpdate
-				} else if !s.comparisonHelper.Equivalent(desiredObj, clusterObj) {
-					// TODO(marun) Since only the metadata is compared
-					// in the call to Equivalent(), use the template
-					// to avoid having to worry about overrides.
-					operationType = util.OperationTypeUpdate
-				}
 			}
 		} else {
 			// A namespace in the host cluster will never need to be
@@ -450,8 +428,12 @@ func (s *FederationSyncController) objectForUpdateOp(desiredObj, clusterObj *uns
 	// Pass the same ResourceVersion as in the cluster object for update operation, otherwise operation will fail.
 	desiredObj.SetResourceVersion(clusterObj.GetResourceVersion())
 
-	if s.typeConfig.GetTarget().Kind == util.ServiceKind {
+	targetKind := s.typeConfig.GetTarget().Kind
+	if targetKind == util.ServiceKind {
 		return serviceForUpdateOp(desiredObj, clusterObj)
+	}
+	if targetKind == util.ServiceAccountKind {
+		return serviceAccountForUpdateOp(desiredObj, clusterObj)
 	}
 	return desiredObj, nil
 }
@@ -506,5 +488,39 @@ func serviceForUpdateOp(desiredObj, clusterObj *unstructured.Unstructured) (*uns
 		return nil, errors.Wrap(err, "Error setting ports for service")
 	}
 
+	return desiredObj, nil
+}
+
+// serviceAccountForUpdateOp retains the 'secrets' field of a service account
+// if the desired representation does not include a value for the field.  This
+// ensures that the sync controller doesn't continually clear a generated
+// secret from a service account, prompting continual regeneration by the
+// service account controller in the member cluster.
+//
+// TODO(marun) Clearing a manually-set secrets field will require resetting
+// placement.  Is there a better way to do this?
+func serviceAccountForUpdateOp(desiredObj, clusterObj *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+	// Check whether the secrets field is populated in the desired object.
+	desiredSecrets, ok, err := unstructured.NestedSlice(desiredObj.Object, util.SecretsField)
+	if err != nil {
+		return nil, errors.Wrap(err, "Error retrieving secrets from desired service account")
+	}
+	if ok && len(desiredSecrets) > 0 {
+		// Field is populated, so an update to the target resource does not
+		// risk triggering a race with the service account controller.
+		return desiredObj, nil
+	}
+
+	// Retrieve the secrets from the cluster object and retain them.
+	secrets, ok, err := unstructured.NestedSlice(clusterObj.Object, util.SecretsField)
+	if err != nil {
+		return nil, errors.Wrap(err, "Error retrieving secrets from service account")
+	}
+	if ok && len(secrets) > 0 {
+		err := unstructured.SetNestedField(desiredObj.Object, secrets, util.SecretsField)
+		if err != nil {
+			return nil, errors.Wrap(err, "Error setting secrets for service account")
+		}
+	}
 	return desiredObj, nil
 }
