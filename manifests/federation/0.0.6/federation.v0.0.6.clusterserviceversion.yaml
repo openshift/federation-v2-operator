@@ -61,7 +61,7 @@ spec:
     ```
     docker run --name=hyperfed --entrypoint=/bin/sh quay.io/openshift/origin-federation-controller:v4.0.0 sleep 50000
     docker cp hyperfed:/root/hyperfed hyperfed
-    ln -s kubefed2 hyperfed
+    ln -s hyperfed kubefed2
     ```
 
     ### Joining Clusters
@@ -228,11 +228,11 @@ spec:
     kind: FederatedDeployment
     metadata:
       name: hello
-      namespace: federation-test
+      namespace: <namespace>
     spec:
       placement:
         clusterNames:
-        - pmorie-dev
+        - cluster-name
       template:
         apiVersion: extensions/v1beta1
         kind: Deployment
