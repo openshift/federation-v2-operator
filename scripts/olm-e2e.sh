@@ -126,8 +126,8 @@ else
   scripts/install-using-catalog-source.sh $QUAY_ACCOUNT $subscription_type
 fi
 
-test::object_assert 30 subscriptions.operators.coreos.com/${subscription_type}-federation-sub "{.status.state}" AtLastKnown
-test::object_assert 30 clusterserviceversions.operators.coreos.com/federation.v${version} "{.status.phase}" Succeeded
+test::object_assert 100 subscriptions.operators.coreos.com/${subscription_type}-federation-sub "{.status.state}" AtLastKnown
+test::object_assert 50 clusterserviceversions.operators.coreos.com/federation.v${version} "{.status.phase}" Succeeded
 
 # TODO: do we ever need to do this?
 #
