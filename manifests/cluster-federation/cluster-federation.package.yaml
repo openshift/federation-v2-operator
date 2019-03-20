@@ -1,4 +1,4 @@
 packageName: cluster-federation
 channels:
 - name: alpha
-  currentCSV: cluster-federation.v0.0.6
+  currentCSV: cluster-federation.v0.0.7

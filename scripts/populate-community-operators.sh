@@ -12,7 +12,7 @@
 #   - src/github.com/operator-framework/community-operators
 
 PACKAGE=${PACKAGE:-"federation"}
-VERSION=${VERSION:-"0.0.6"}
+VERSION=${VERSION:-"0.0.7"}
 AREA=${AREA:-"community-operators"}
 
 dir=$(realpath "$(dirname "${BASH_SOURCE}")/..")

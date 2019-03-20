@@ -3,7 +3,7 @@
 apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
-  name: federation.v0.0.6
+  name: federation.v0.0.7
   namespace: placeholder
   annotations:
     capabilities: Basic Install
@@ -258,13 +258,13 @@ spec:
 
     See also the upstream [user guide](https://github.com/kubernetes-sigs/federation-v2/blob/master/docs/userguide.md#disabling-federation-of-an-api-type) for more information.
   keywords: ['kubernetes', 'federation', 'hybrid', 'hybrid cloud', 'multi-cluster', 'cluster']
-  version: 0.0.6
+  version: 0.0.7
   maturity: alpha
   provider:
     name: Red Hat
   labels:
     alm-owner-federation: federation
-    alm-status-descriptors: federation.v0.0.6
+    alm-status-descriptors: federation.v0.0.7
   installModes:
   - type: OwnNamespace
     supported: true

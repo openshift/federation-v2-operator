@@ -29,12 +29,14 @@ RUN rm -rf vendor/github.com/kubernetes-sigs/federation-v2
 # HACK: GIT_VERSION is set explicitly due to an issue with how the .git directory is copied in
 RUN DOCKER_BUILD="/bin/sh -c " GIT_VERSION="0.0.6" make hyperfed
 
+RUN ls -l bin/
+
 # build stage 2: copy in binaries, add OLM manifest, labels, etc.
 FROM openshift/origin-base
 
 # copy in binaries
 WORKDIR /root/
-COPY --from=builder /go/src/github.com/kubernetes-sigs/federation-v2/bin/hyperfed /root/hyperfed
+COPY --from=builder /go/src/github.com/kubernetes-sigs/federation-v2/bin/hyperfed-linux /root/hyperfed
 RUN ln -s hyperfed controller-manager && ln -s hyperfed kubefed2
 
 # user directive - this image does not require root
