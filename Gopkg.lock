@@ -249,8 +249,10 @@
   name = "github.com/kubernetes-sigs/federation-v2"
   packages = [
     "cmd/controller-manager/app",
+    "cmd/controller-manager/app/leaderelection",
     "cmd/controller-manager/app/options",
     "cmd/hyperfed",
+    "pkg/apis",
     "pkg/apis/core/common",
     "pkg/apis/core/typeconfig",
     "pkg/apis/core/v1alpha1",
@@ -265,6 +267,8 @@
     "pkg/client/clientset/versioned/typed/multiclusterdns/v1alpha1/fake",
     "pkg/client/clientset/versioned/typed/scheduling/v1alpha1",
     "pkg/client/clientset/versioned/typed/scheduling/v1alpha1/fake",
+    "pkg/client/generic",
+    "pkg/client/generic/scheme",
     "pkg/client/informers/externalversions",
     "pkg/client/informers/externalversions/core",
     "pkg/client/informers/externalversions/core/v1alpha1",
@@ -295,19 +299,19 @@
     "pkg/inject",
     "pkg/inject/args",
     "pkg/kubefed2",
+    "pkg/kubefed2/enable",
     "pkg/kubefed2/federate",
     "pkg/kubefed2/options",
     "pkg/kubefed2/util",
     "pkg/schedulingtypes",
     "pkg/version"
   ]
-  revision = "d56dfb3b83e8d40e584b5e66116de98328846fd2"
-  version = "v0.0.6"
+  revision = "83b778b6d92a7929efb7687d3d3d64bf0b3ad3bc"
+  version = "v0.0.7"
 
 [[projects]]
   name = "github.com/kubernetes-sigs/kubebuilder"
   packages = [
-    "pkg/config",
     "pkg/controller",
     "pkg/controller/eventhandlers",
     "pkg/controller/informers",
@@ -730,6 +734,7 @@
     "pkg/util/runtime",
     "pkg/util/sets",
     "pkg/util/strategicpatch",
+    "pkg/util/uuid",
     "pkg/util/validation",
     "pkg/util/validation/field",
     "pkg/util/wait",
@@ -883,6 +888,8 @@
     "tools/clientcmd/api",
     "tools/clientcmd/api/latest",
     "tools/clientcmd/api/v1",
+    "tools/leaderelection",
+    "tools/leaderelection/resourcelock",
     "tools/metrics",
     "tools/pager",
     "tools/record",
@@ -903,12 +910,7 @@
 
 [[projects]]
   name = "k8s.io/cluster-registry"
-  packages = [
-    "pkg/apis/clusterregistry/v1alpha1",
-    "pkg/client/clientset/versioned",
-    "pkg/client/clientset/versioned/scheme",
-    "pkg/client/clientset/versioned/typed/clusterregistry/v1alpha1"
-  ]
+  packages = ["pkg/apis/clusterregistry/v1alpha1"]
   revision = "423735c7f10cbbc83ccee14d62b266ddcf9709dd"
   version = "v0.0.6"
 
@@ -956,6 +958,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "609bf26a18c4f80b96145308829c223622ad885933c7b0cfad91e7ce3d6039cd"
+  inputs-digest = "044ee728b13d8b41e25ab73712fc5162e92e35349078524b21854f71f744e149"
   solver-name = "gps-cdcl"
   solver-version = 1

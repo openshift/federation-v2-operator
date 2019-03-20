@@ -17,13 +17,15 @@ limitations under the License.
 package framework
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
 	"github.com/pkg/errors"
 
 	"github.com/kubernetes-sigs/federation-v2/pkg/apis/core/typeconfig"
-	fedclientset "github.com/kubernetes-sigs/federation-v2/pkg/client/clientset/versioned"
+	fedv1a1 "github.com/kubernetes-sigs/federation-v2/pkg/apis/core/v1alpha1"
+	genericclient "github.com/kubernetes-sigs/federation-v2/pkg/client/generic"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
 	"github.com/kubernetes-sigs/federation-v2/test/common"
 	"github.com/kubernetes-sigs/federation-v2/test/e2e/framework/managed"
@@ -35,7 +37,6 @@ import (
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
-	crclientset "k8s.io/cluster-registry/pkg/client/clientset/versioned"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -185,20 +186,15 @@ func (f *UnmanagedFramework) KubeClient(userAgent string) kubeclientset.Interfac
 	return kubeclientset.NewForConfigOrDie(f.Config)
 }
 
-func (f *UnmanagedFramework) FedClient(userAgent string) fedclientset.Interface {
-	restclient.AddUserAgent(f.Config, userAgent)
-	return fedclientset.NewForConfigOrDie(f.Config)
-}
-
-func (f *UnmanagedFramework) CrClient(userAgent string) crclientset.Interface {
-	restclient.AddUserAgent(f.Config, userAgent)
-	return crclientset.NewForConfigOrDie(f.Config)
+func (f *UnmanagedFramework) Client(userAgent string) genericclient.Client {
+	return genericclient.NewForConfigOrDieWithUserAgent(f.Config, userAgent)
 }
 
 func (f *UnmanagedFramework) ClusterNames(userAgent string) []string {
 	var clusters []string
-	fedClient := f.FedClient(userAgent)
-	clusterList, err := fedClient.CoreV1alpha1().FederatedClusters(TestContext.FederationSystemNamespace).List(metav1.ListOptions{})
+	client := f.Client(userAgent)
+	clusterList := &fedv1a1.FederatedClusterList{}
+	err := client.List(context.TODO(), clusterList, TestContext.FederationSystemNamespace)
 	ExpectNoError(err, fmt.Sprintf("Error retrieving list of federated clusters: %+v", err))
 
 	for _, cluster := range clusterList.Items {
@@ -244,17 +240,15 @@ func (f *UnmanagedFramework) ClusterConfigs(userAgent string) map[string]common.
 	// Could also accept 'forceReload' parameter for tests that require it.
 
 	By("Obtaining a list of federated clusters")
-	fedClient := f.FedClient(userAgent)
-	clusterList := managed.ListFederatedClusters(NewE2ELogger(), fedClient, TestContext.FederationSystemNamespace)
+	client := f.Client(userAgent)
+	clusterList := managed.ListFederatedClusters(NewE2ELogger(), client, TestContext.FederationSystemNamespace)
 
 	// Assume host cluster name is the same as the current context name.
 	hostClusterName := f.Kubeconfig.CurrentContext
 
-	kubeClient := f.KubeClient(userAgent)
-	crClient := f.CrClient(userAgent)
 	clusterConfigs := make(map[string]common.TestClusterConfig)
 	for _, cluster := range clusterList.Items {
-		config, err := util.BuildClusterConfig(&cluster, kubeClient, crClient, TestContext.FederationSystemNamespace, TestContext.ClusterNamespace)
+		config, err := util.BuildClusterConfig(&cluster, client, TestContext.FederationSystemNamespace, TestContext.ClusterNamespace)
 		Expect(err).NotTo(HaveOccurred())
 		restclient.AddUserAgent(config, userAgent)
 		clusterConfigs[cluster.Name] = common.TestClusterConfig{
@@ -408,6 +402,6 @@ func WaitForUnmanagedClusterReadiness() {
 	config, _, err := loadConfig(TestContext.KubeConfig, TestContext.KubeContext)
 	Expect(err).NotTo(HaveOccurred())
 	restclient.AddUserAgent(config, "readiness-check")
-	client := fedclientset.NewForConfigOrDie(config)
+	client := genericclient.NewForConfigOrDie(config)
 	managed.WaitForClusterReadiness(NewE2ELogger(), client, TestContext.FederationSystemNamespace, PollInterval, TestContext.SingleCallTimeout)
 }

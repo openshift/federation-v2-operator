@@ -17,27 +17,25 @@ limitations under the License.
 package schedulingmanager
 
 import (
+	"sync"
+
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 
 	"github.com/kubernetes-sigs/federation-v2/pkg/apis/core/typeconfig"
 	corev1a1 "github.com/kubernetes-sigs/federation-v2/pkg/apis/core/v1alpha1"
-	fedclientset "github.com/kubernetes-sigs/federation-v2/pkg/client/clientset/versioned"
-	corev1alpha1client "github.com/kubernetes-sigs/federation-v2/pkg/client/clientset/versioned/typed/core/v1alpha1"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/schedulingpreference"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
 	"github.com/kubernetes-sigs/federation-v2/pkg/schedulingtypes"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	pkgruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/watch"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 )
 
 type SchedulerController struct {
+	sync.RWMutex
 	// Store for the FederatedTypeConfig objects
 	store cache.Store
 	// Informer for the FederatedTypeConfig objects
@@ -54,48 +52,45 @@ type SchedulerController struct {
 	federatedKindMap map[string]string
 }
 
-func StartSchedulerController(config *util.ControllerConfig, stopChan <-chan struct{}) {
+func StartSchedulerController(config *util.ControllerConfig, stopChan <-chan struct{}) (*SchedulerController, error) {
 
 	userAgent := "SchedulerController"
 	kubeConfig := config.KubeConfig
 	restclient.AddUserAgent(kubeConfig, userAgent)
-	client := fedclientset.NewForConfigOrDie(kubeConfig).CoreV1alpha1()
 
-	controller := newController(config, client)
+	controller, err := newController(config)
+	if err != nil {
+		return nil, err
+	}
 
 	glog.Infof("Starting scheduler controller")
 	controller.Run(stopChan)
+	return controller, nil
 }
 
-func newController(config *util.ControllerConfig, client corev1alpha1client.CoreV1alpha1Interface) *SchedulerController {
+func newController(config *util.ControllerConfig) (*SchedulerController, error) {
 	c := &SchedulerController{
 		config:           config,
 		scheduler:        make(map[string]schedulingtypes.Scheduler),
-		runningPlugins:   sets.String{},
+		runningPlugins:   make(sets.String),
 		federatedKindMap: make(map[string]string),
 	}
 
-	fedNamespace := config.FederationNamespace
 	c.worker = util.NewReconcileWorker(c.reconcile, util.WorkerTiming{})
 
-	c.store, c.controller = cache.NewInformer(
-		&cache.ListWatch{
-			// Only watch the federation namespace to ensure
-			// restrictive authz can be applied to a namespaced
-			// control plane.
-			ListFunc: func(options metav1.ListOptions) (pkgruntime.Object, error) {
-				return client.FederatedTypeConfigs(fedNamespace).List(options)
-			},
-			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				return client.FederatedTypeConfigs(fedNamespace).Watch(options)
-			},
-		},
+	var err error
+	c.store, c.controller, err = util.NewGenericInformer(
+		config.KubeConfig,
+		config.FederationNamespace,
 		&corev1a1.FederatedTypeConfig{},
 		util.NoResyncPeriod,
-		util.NewTriggerOnAllChanges(c.worker.EnqueueObject),
+		c.worker.EnqueueObject,
 	)
+	if err != nil {
+		return nil, err
+	}
 
-	return c
+	return c, nil
 }
 
 // Run runs the Controller.
@@ -139,6 +134,8 @@ func (c *SchedulerController) reconcile(qualifiedName util.QualifiedName) util.R
 		return util.StatusAllOK
 	}
 
+	c.Lock()
+	defer c.Unlock()
 	if c.runningPlugins.Has(qualifiedName.Name) {
 		// Scheduler and plugin are already running
 		return util.StatusAllOK
@@ -183,6 +180,8 @@ func (c *SchedulerController) reconcile(qualifiedName util.QualifiedName) util.R
 }
 
 func (c *SchedulerController) stopScheduler(schedulingKind string, qualifiedName util.QualifiedName) {
+	c.Lock()
+	defer c.Unlock()
 	scheduler, ok := c.scheduler[schedulingKind]
 	if !ok {
 		return
@@ -192,11 +191,13 @@ func (c *SchedulerController) stopScheduler(schedulingKind string, qualifiedName
 		return
 	}
 
-	glog.Infof("Stopping plugin for %q with kind %q", qualifiedName.Name, c.federatedKindMap[qualifiedName.Name])
-
-	scheduler.StopPlugin(c.federatedKindMap[qualifiedName.Name])
+	kind, ok := c.federatedKindMap[qualifiedName.Name]
+	if ok {
+		glog.Infof("Stopping plugin for %q with kind %q", qualifiedName.Name, kind)
+		scheduler.StopPlugin(kind)
+		delete(c.federatedKindMap, qualifiedName.Name)
+	}
 	c.runningPlugins.Delete(qualifiedName.Name)
-	delete(c.federatedKindMap, qualifiedName.Name)
 
 	// if all resources registered to same scheduler are deleted, the scheduler should be stopped
 	resources := schedulingtypes.GetSchedulingKinds(qualifiedName.Name)
@@ -207,4 +208,20 @@ func (c *SchedulerController) stopScheduler(schedulingKind string, qualifiedName
 
 		delete(c.scheduler, schedulingKind)
 	}
+}
+
+func (c *SchedulerController) HasSchedulerPlugin(name string) bool {
+	c.RLock()
+	defer c.RUnlock()
+	return c.runningPlugins.Has(name)
+}
+
+func (c *SchedulerController) HasScheduler(name string) bool {
+	c.RLock()
+	defer c.RUnlock()
+	_, ok := c.scheduler[name]
+	if !ok {
+		return false
+	}
+	return true
 }

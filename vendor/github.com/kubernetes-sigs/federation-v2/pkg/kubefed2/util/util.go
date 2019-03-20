@@ -19,11 +19,10 @@ package util
 import (
 	"fmt"
 
-	fedclient "github.com/kubernetes-sigs/federation-v2/pkg/client/clientset/versioned"
-	client "k8s.io/client-go/kubernetes"
+	"github.com/kubernetes-sigs/federation-v2/pkg/client/generic"
+	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	crclient "k8s.io/cluster-registry/pkg/client/clientset/versioned"
 )
 
 // FedConfig provides a rest config based on the filesystem kubeconfig (via
@@ -85,26 +84,20 @@ func (a *fedConfig) getClientConfig(context, kubeconfigPath string) clientcmd.Cl
 
 // HostClientset provides a kubernetes API compliant clientset to
 // communicate with the host cluster's kubernetes API server.
-func HostClientset(config *rest.Config) (*client.Clientset, error) {
-	return client.NewForConfig(config)
+func HostClientset(config *rest.Config) (*kubeclient.Clientset, error) {
+	return kubeclient.NewForConfig(config)
 }
 
 // ClusterClientset provides a kubernetes API compliant clientset to
 // communicate with the joining cluster's kubernetes API server.
-func ClusterClientset(config *rest.Config) (*client.Clientset, error) {
-	return client.NewForConfig(config)
+func ClusterClientset(config *rest.Config) (*kubeclient.Clientset, error) {
+	return kubeclient.NewForConfig(config)
 }
 
 // ClusterRegistryClientset provides a cluster registry API compliant
 // clientset to communicate with the cluster registry.
-func ClusterRegistryClientset(config *rest.Config) (*crclient.Clientset, error) {
-	return crclient.NewForConfig(config)
-}
-
-// FedClientset provides a federation API compliant clientset
-// to communicate with the federation API server.
-func FedClientset(config *rest.Config) (*fedclient.Clientset, error) {
-	return fedclient.NewForConfig(config)
+func ClusterRegistryClientset(config *rest.Config) (generic.Client, error) {
+	return generic.New(config)
 }
 
 // ClusterServiceAccountName returns the name of a service account whose
@@ -123,6 +116,6 @@ func RoleName(serviceAccountName string) string {
 // HealthCheckRoleName returns the name of a ClusterRole and its
 // associated ClusterRoleBinding that is used to allow the service
 // account to check the health of the cluster and list nodes.
-func HealthCheckRoleName(serviceAccountName string) string {
-	return fmt.Sprintf("federation-controller-manager:healthcheck-%s", serviceAccountName)
+func HealthCheckRoleName(serviceAccountName, namespace string) string {
+	return fmt.Sprintf("federation-controller-manager:%s:healthcheck-%s", namespace, serviceAccountName)
 }

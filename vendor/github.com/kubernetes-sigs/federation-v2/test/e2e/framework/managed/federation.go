@@ -17,6 +17,7 @@ limitations under the License.
 package managed
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
@@ -27,10 +28,10 @@ import (
 	"github.com/kubernetes-sigs/kubebuilder/pkg/install"
 
 	fedv1a1 "github.com/kubernetes-sigs/federation-v2/pkg/apis/core/v1alpha1"
-	fedclientset "github.com/kubernetes-sigs/federation-v2/pkg/client/clientset/versioned"
+	genericclient "github.com/kubernetes-sigs/federation-v2/pkg/client/generic"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
 	"github.com/kubernetes-sigs/federation-v2/pkg/inject"
-	"github.com/kubernetes-sigs/federation-v2/pkg/kubefed2/federate"
+	kfenable "github.com/kubernetes-sigs/federation-v2/pkg/kubefed2/enable"
 	"github.com/kubernetes-sigs/federation-v2/test/common"
 	apiv1 "k8s.io/api/core/v1"
 	apiextv1b1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
@@ -43,7 +44,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crv1a1 "k8s.io/cluster-registry/pkg/apis/clusterregistry/v1alpha1"
-	crclientset "k8s.io/cluster-registry/pkg/client/clientset/versioned"
 )
 
 // TODO(marun) In fedv1 namespace cleanup required that a kube api
@@ -95,8 +95,7 @@ func (f *FederationFixture) setUp(tl common.TestLogger, clusterCount int) {
 	f.ClusterController = NewClusterControllerFixture(f.ControllerConfig(tl))
 	tl.Log("Federation started.")
 
-	config := f.KubeApi.NewConfig(tl)
-	client := fedclientset.NewForConfigOrDie(config)
+	client := genericclient.NewForConfigOrDie(f.KubeApi.NewConfig(tl))
 	WaitForClusterReadiness(tl, client, f.SystemNamespace, DefaultWaitInterval, wait.ForeverTestTimeout)
 }
 
@@ -146,9 +145,10 @@ func (f *FederationFixture) AddMemberCluster(tl common.TestLogger) string {
 // registerCluster registers a cluster with the cluster registry
 func (f *FederationFixture) registerCluster(tl common.TestLogger, host string) string {
 	// Registry the kube api with the cluster registry
-	crClient := f.NewCrClient(tl, userAgent)
-	cluster, err := crClient.ClusterregistryV1alpha1().Clusters(f.SystemNamespace).Create(&crv1a1.Cluster{
+	client := f.NewClient(tl, userAgent)
+	cluster := &crv1a1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
+			Namespace:    f.SystemNamespace,
 			GenerateName: "test-cluster-",
 		},
 		Spec: crv1a1.ClusterSpec{
@@ -161,7 +161,8 @@ func (f *FederationFixture) registerCluster(tl common.TestLogger, host string) s
 				},
 			},
 		},
-	})
+	}
+	err := client.Create(context.TODO(), cluster)
 	if err != nil {
 		tl.Fatal(err)
 	}
@@ -208,10 +209,11 @@ func (f *FederationFixture) createSecret(tl common.TestLogger, clusterFixture *K
 // createFederatedCluster create a federated cluster resource that
 // associates the cluster and secret.
 func (f *FederationFixture) createFederatedCluster(tl common.TestLogger, clusterName, secretName string) {
-	fedClient := f.NewFedClient(tl, userAgent)
-	_, err := fedClient.CoreV1alpha1().FederatedClusters(f.SystemNamespace).Create(&fedv1a1.FederatedCluster{
+	client := f.NewClient(tl, userAgent)
+	err := client.Create(context.TODO(), &fedv1a1.FederatedCluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: clusterName,
+			Namespace: f.SystemNamespace,
+			Name:      clusterName,
 		},
 		Spec: fedv1a1.FederatedClusterSpec{
 			ClusterRef: apiv1.LocalObjectReference{
@@ -227,16 +229,10 @@ func (f *FederationFixture) createFederatedCluster(tl common.TestLogger, cluster
 	}
 }
 
-func (f *FederationFixture) NewFedClient(tl common.TestLogger, userAgent string) fedclientset.Interface {
+func (f *FederationFixture) NewClient(tl common.TestLogger, userAgent string) genericclient.Client {
 	config := f.KubeApi.NewConfig(tl)
 	rest.AddUserAgent(config, userAgent)
-	return fedclientset.NewForConfigOrDie(config)
-}
-
-func (f *FederationFixture) NewCrClient(tl common.TestLogger, userAgent string) crclientset.Interface {
-	config := f.KubeApi.NewConfig(tl)
-	rest.AddUserAgent(config, userAgent)
-	return crclientset.NewForConfigOrDie(config)
+	return genericclient.NewForConfigOrDie(config)
 }
 
 func (f *FederationFixture) ClusterConfigs(tl common.TestLogger, userAgent string) map[string]common.TestClusterConfig {
@@ -370,12 +366,12 @@ func waitForCrd(tl common.TestLogger, config *rest.Config, crd *apiextv1b1.Custo
 
 func federateCoreTypes(tl common.TestLogger, config *rest.Config, namespace string) []*apiextv1b1.CustomResourceDefinition {
 	crds := []*apiextv1b1.CustomResourceDefinition{}
-	for _, enableTypeDirective := range loadEnableTypeDirectives(tl) {
-		resources, err := federate.GetResources(config, enableTypeDirective)
+	for _, enableTypeDirective := range LoadEnableTypeDirectives(tl) {
+		resources, err := kfenable.GetResources(config, enableTypeDirective)
 		if err != nil {
 			tl.Fatalf("Error retrieving resource definitions for EnableTypeDirective %q: %v", enableTypeDirective.Name, err)
 		}
-		err = federate.CreateResources(nil, config, resources, namespace)
+		err = kfenable.CreateResources(nil, config, resources, namespace)
 		if err != nil {
 			tl.Fatalf("Error creating resources for EnableTypeDirective %q: %v", enableTypeDirective.Name, err)
 		}
@@ -383,21 +379,22 @@ func federateCoreTypes(tl common.TestLogger, config *rest.Config, namespace stri
 	}
 	return crds
 }
-func loadEnableTypeDirectives(tl common.TestLogger) []*federate.EnableTypeDirective {
+
+func LoadEnableTypeDirectives(tl common.TestLogger) []*kfenable.EnableTypeDirective {
 	path := enableTypeDirectivesPath(tl)
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
 		tl.Fatalf("Error reading EnableTypeDirective resources from path %q: %v", path, err)
 	}
-	enableTypeDirectives := []*federate.EnableTypeDirective{}
+	enableTypeDirectives := []*kfenable.EnableTypeDirective{}
 	suffix := ".yaml"
 	for _, file := range files {
 		if !strings.HasSuffix(file.Name(), suffix) {
 			continue
 		}
 		filename := filepath.Join(path, file.Name())
-		obj := federate.NewEnableTypeDirective()
-		err := federate.DecodeYAMLFromFile(filename, obj)
+		obj := kfenable.NewEnableTypeDirective()
+		err := kfenable.DecodeYAMLFromFile(filename, obj)
 		if err != nil {
 			tl.Fatalf("Error loading EnableTypeDirective from file %q: %v", filename, err)
 		}

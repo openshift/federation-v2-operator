@@ -20,14 +20,13 @@ import (
 	"fmt"
 
 	"github.com/kubernetes-sigs/federation-v2/pkg/apis/core/typeconfig"
-	fedclientset "github.com/kubernetes-sigs/federation-v2/pkg/client/clientset/versioned"
+	genericclient "github.com/kubernetes-sigs/federation-v2/pkg/client/generic"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
 	"github.com/kubernetes-sigs/federation-v2/test/common"
 	"github.com/kubernetes-sigs/federation-v2/test/e2e/framework/managed"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeclientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
-	crclientset "k8s.io/cluster-registry/pkg/client/clientset/versioned"
 )
 
 var (
@@ -99,20 +98,14 @@ func (f *ManagedFramework) KubeConfig() *restclient.Config {
 	return fedFixture.KubeApi.NewConfig(f.logger)
 }
 
-func (f *ManagedFramework) FedClient(userAgent string) fedclientset.Interface {
+func (f *ManagedFramework) Client(userAgent string) genericclient.Client {
 	config := fedFixture.KubeApi.NewConfig(f.logger)
 	restclient.AddUserAgent(config, userAgent)
-	return fedclientset.NewForConfigOrDie(config)
+	return genericclient.NewForConfigOrDie(config)
 }
 
 func (f *ManagedFramework) KubeClient(userAgent string) kubeclientset.Interface {
 	return fedFixture.KubeApi.NewClient(f.logger, userAgent)
-}
-
-func (f *ManagedFramework) CrClient(userAgent string) crclientset.Interface {
-	config := fedFixture.KubeApi.NewConfig(f.logger)
-	restclient.AddUserAgent(config, userAgent)
-	return crclientset.NewForConfigOrDie(config)
 }
 
 func (f *ManagedFramework) ClusterNames(userAgent string) []string {

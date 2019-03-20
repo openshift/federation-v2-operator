@@ -17,12 +17,13 @@ limitations under the License.
 package app
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 
 	"github.com/golang/glog"
-	configlib "github.com/kubernetes-sigs/kubebuilder/pkg/config"
 	"github.com/kubernetes-sigs/kubebuilder/pkg/install"
 	"github.com/kubernetes-sigs/kubebuilder/pkg/signals"
 	"github.com/spf13/cobra"
@@ -31,7 +32,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/apiserver/pkg/util/logs"
+	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/kubernetes-sigs/federation-v2/cmd/controller-manager/app/leaderelection"
 	"github.com/kubernetes-sigs/federation-v2/cmd/controller-manager/app/options"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/dnsendpoint"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/federatedcluster"
@@ -42,6 +45,10 @@ import (
 	"github.com/kubernetes-sigs/federation-v2/pkg/features"
 	"github.com/kubernetes-sigs/federation-v2/pkg/inject"
 	"github.com/kubernetes-sigs/federation-v2/pkg/version"
+)
+
+var (
+	kubeconfig, masterURL string
 )
 
 // NewControllerManagerCommand creates a *cobra.Command object with default parameters
@@ -73,6 +80,8 @@ member clusters and does the necessary reconciliation`,
 
 	opts.AddFlags(cmd.Flags())
 	cmd.Flags().BoolVar(&verFlag, "version", false, "Prints the Version info of controller-manager")
+	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
+	cmd.Flags().StringVar(&masterURL, "master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
 
 	return cmd
 }
@@ -88,7 +97,11 @@ func Run(opts *options.Options) error {
 
 	stopChan := signals.SetupSignalHandler()
 
-	opts.Config.KubeConfig = configlib.GetConfigOrDie()
+	var err error
+	opts.Config.KubeConfig, err = clientcmd.BuildConfigFromFlags(masterURL, kubeconfig)
+	if err != nil {
+		panic(err)
+	}
 
 	if opts.InstallCRDs {
 		if err := install.NewInstaller(opts.Config.KubeConfig).Install(&InstallStrategy{crds: inject.Injector.CRDs}); err != nil {
@@ -104,10 +117,37 @@ func Run(opts *options.Options) error {
 		glog.Info("Federation will target all namespaces")
 	}
 
-	federatedcluster.StartClusterController(opts.Config, stopChan, opts.ClusterMonitorPeriod)
+	elector, err := leaderelection.NewFederationLeaderElector(opts, startControllers)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		select {
+		case <-stopChan:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	elector.Run(ctx)
+
+	glog.Errorf("lost lease")
+	return errors.New("lost lease")
+}
+
+func startControllers(opts *options.Options, stopChan <-chan struct{}) {
+	if err := federatedcluster.StartClusterController(opts.Config, stopChan, opts.ClusterMonitorPeriod); err != nil {
+		glog.Fatalf("Error starting cluster controller: %v", err)
+	}
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.SchedulerPreferences) {
-		schedulingmanager.StartSchedulerController(opts.Config, stopChan)
+		if _, err := schedulingmanager.StartSchedulerController(opts.Config, stopChan); err != nil {
+			glog.Fatalf("Error starting scheduler controller: %v", err)
+		}
 	}
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.CrossClusterServiceDiscovery) {
@@ -135,9 +175,6 @@ func Run(opts *options.Options) error {
 			glog.Fatalf("Error starting federated type config controller: %v", err)
 		}
 	}
-
-	// Blockforever
-	select {}
 }
 
 type InstallStrategy struct {

@@ -13,18 +13,19 @@
   - [Operations](#operations)
     - [Join Clusters](#join-clusters)
     - [Check Status of Joined Clusters](#check-status-of-joined-clusters)
+    - [Unjoin Clusters](#unjoin-clusters)
   - [Enabling federation of an API type](#enabling-federation-of-an-api-type)
   - [Disabling federation of an API type](#disabling-federation-of-an-api-type)
   - [Example](#example)
     - [Create the Test Namespace](#create-the-test-namespace)
     - [Create Test Resources](#create-test-resources)
     - [Check Status of Resources](#check-status-of-resources)
-    - [Update FederatedNamespace Placement](#update-federatednamespace)
+    - [Update FederatedNamespace Placement](#update-federatednamespace-placement)
       - [Using Cluster Selector](#using-cluster-selector)
         - [Neither `spec.placement.clusterNames` nor `spec.placement.clusterSelector` is provided](#neither-specplacementclusternames-nor-specplacementclusterselector-is-provided)
         - [Both `spec.placement.clusterNames` and `spec.placement.clusterSelector` are provided](#both-specplacementclusternames-and-specplacementclusterselector-are-provided)
         - [`spec.placement.clusterNames` is not provided, `spec.placement.clusterSelector` is provided but empty](#specplacementclusternames-is-not-provided-specplacementclusterselector-is-provided-but-empty)
-        - [`spec.placementclusterNames` is not provided, `spec.placement.clusterSelector` is provided and not empty](#specplacementclusternames-is-not-provided-specplacementclusterselector-is-provided-and-not-empty)
+        - [`spec.placement.clusterNames` is not provided, `spec.placement.clusterSelector` is provided and not empty](#specplacementclusternames-is-not-provided-specplacementclusterselector-is-provided-and-not-empty)
     - [Example Cleanup](#example-cleanup)
     - [Troubleshooting](#troubleshooting)
   - [Cleanup](#cleanup)
@@ -33,6 +34,8 @@
     - [Automated Deployment](#automated-deployment-1)
     - [Joining Clusters](#joining-clusters)
     - [Deployment Cleanup](#deployment-cleanup-1)
+  - [Local Value Retention](#local-value-retention)
+    - [Scalable Resources](#scalable-resources)
   - [Higher order behaviour](#higher-order-behaviour)
     - [Multi-Cluster Ingress DNS](#multi-cluster-ingress-dns)
     - [Multi-Cluster Service DNS](#multi-cluster-service-dns)
@@ -172,6 +175,14 @@ Status:
     Status:                True
     Type:                  Ready
 ```
+### Unjoin Clusters
+
+If required, federation allows you to unjoin clusters using `kubefed2` tool.
+
+```bash
+./bin/kubefed2 unjoin cluster2 --cluster-context cluster2 --host-cluster-context cluster1 --remove-from-registry --v=2
+```
+You can repeat these steps to unjoin any additional clusters.
 
 ## Enabling federation of an API type
 
@@ -527,6 +538,44 @@ employed by deployment:
 ```bash
 NAMESPACED=y FEDERATION_NAMESPACE=<namespace> ./scripts/delete-federation.sh
 ```
+
+## Local Value Retention
+
+In most cases, the federation sync controller will overwrite any
+changes made to resources it manages in member clusters.  The
+exceptions appear in the following table.  Where retention is
+conditional, an explanation will be provided in a subsequent section.
+
+| Resource Type  | Fields                    | Retention   | Requirement                                                                  |
+|----------------|---------------------------|--------------------------------------------------------------------------------------------|
+| All            | metadata.resourceVersion  | Always      | Updates require the most recent resourceVersion for concurrency control.     |
+| Scalable       | spec.replicas             | Conditional | The HPA controller may be managing the replica count of a scalable resource. |
+| Service        | spec.clusterIP,spec.ports | Always      | A controller may be managing these fields.                                   |
+| ServiceAccount | secrets                   | Conditional | A controller may be managing this field.                                     |
+
+### Scalable
+
+For scalable resources (those that have a scale subtype
+e.g. `ReplicaSet` and `Deployment`), retention of the `spec.replicas`
+field is controlled by the `retainReplicas` boolean field of the
+federated resource.  `retainReplicas` defaults to `false`, and should
+be set to `true` only if the resource will be managed by HPA in member
+clusters.
+
+Retention of the replicas field is possible for all
+clusters or no clusters.  If a resource will be managed by HPA in some
+clusters but not others, it will be necessary to create a separate
+federated resource for each retention strategy (i.e. one with
+`retainReplicas: true` and one with `retainReplicas: false`).
+
+### ServiceAccount
+
+A populated `secrets` field of a `ServiceAccount` resource managed by
+federation will be retained if the managing federated resource does
+not specify a value for the field.  This avoids the possibility of the
+sync controller attempting to repeatedly clear the field while a local
+serviceaccounts controller attempts to repeatedly set it to a
+generated value.
 
 ## Higher order behaviour
 

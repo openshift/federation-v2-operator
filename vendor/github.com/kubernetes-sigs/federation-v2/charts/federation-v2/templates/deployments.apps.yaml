@@ -26,6 +26,8 @@ spec:
   names:
     kind: FederatedDeployment
     plural: federateddeployments
+    shortNames:
+    - fdeploy
   scope: Namespaced
   validation:
     openAPIV3Schema:
@@ -89,6 +91,8 @@ spec:
                       type: object
                   type: object
               type: object
+            retainReplicas:
+              type: bool
             template:
               properties:
                 apiVersion:
