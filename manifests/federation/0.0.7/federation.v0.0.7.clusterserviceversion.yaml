@@ -175,14 +175,14 @@ spec:
       controller to handle the new federation API
 
 
-        kubefed2 enable deployments \
+        kubefed2 enable deployments.extensions \
           --federation-namespace=<namespace> \
           --registry-namespace=<namespace>
     
     Running this command produces a new CRD in the hosting cluster to be the
     federation API surface for the deployments resource.
 
-        kubectl get crd/federateddeployments.primitives.federation.k8s.io
+        kubectl get crd/federateddeployments.types.federation.k8s.io
         No resources found.
 
     `FederatedTypeConfig` resources configure federation to watch the new
@@ -250,11 +250,14 @@ spec:
 
     Use the `kubefed2 disable` command to disable federation for an API type.
 
-        kubefed2 disable deployments --federation-namespace=<namespace>
+        kubefed2 disable deployments.extensions --federation-namespace=<namespace>
 
-    This command deletes the `FederatedTypeConfig` for the API type being disabled.
+    This will disable the propagation of federated deployments, but leave the
+    API surface and `FederatedTypeConfig` intact.
 
-        kubectl get federatedtypeconfigs -n <namespace>
+    To fully remove the API surface, use the `--delete-from-api` flag:
+
+        kubefed2 disable deployments.extensions --federation-namespace=<namespace>
 
     See also the upstream [user guide](https://github.com/kubernetes-sigs/federation-v2/blob/master/docs/userguide.md#disabling-federation-of-an-api-type) for more information.
   keywords: ['kubernetes', 'federation', 'hybrid', 'hybrid cloud', 'multi-cluster', 'cluster']
