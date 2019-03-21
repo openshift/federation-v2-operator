@@ -29,8 +29,6 @@ RUN rm -rf vendor/github.com/kubernetes-sigs/federation-v2
 # HACK: GIT_VERSION is set explicitly due to an issue with how the .git directory is copied in
 RUN DOCKER_BUILD="/bin/sh -c " GIT_VERSION="0.0.6" make hyperfed
 
-RUN ls -l bin/
-
 # build stage 2: copy in binaries, add OLM manifest, labels, etc.
 FROM openshift/origin-base
 
