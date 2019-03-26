@@ -5,7 +5,8 @@ This repository contains source code and resource manifests to build
 using [ci-operator](https://github.com/openshift/ci-operator) as part of the
 [OpenShift](https://openshift.com) build process.
 
-Federation v2 is deployed as an [operator](https://coreos.com/operators) using
+This repository also contains exploratory work to deploy Federation-v2 as an
+[operator](https://coreos.com/operators) using
 [OLM](https://github.com/operator-framework/operator-lifecycle-manager).
 
 ### Layout of this repository
@@ -18,10 +19,14 @@ Federation v2 is deployed as an [operator](https://coreos.com/operators) using
 - The `Dockerfile` in the root directory is used to build enterprise images and
   performs binary builds only
 - The `manifests/` directory contains manifests to configure OLM to deploy
-  federation-v2
+  federation-v2 _built from the code vendored into this repository_
+- The `upstream-manifests/` directory contains manifests to configure OLM to deploy
+  federation-v2 _using the [upstream images](https://quay.io/repository/kubernetes-multicluster/federation-v2?tab=tags)_
 - The `olm-testing/` directory contains a `Dockerfile` for building an operator
   registry that hosts the OLM manifests
-- The `scripts/` directory holds scripts to populate `manifests`
+- The `scripts/` directory holds scripts to populate `manifests`, the
+  [community-operators repo](https://github.com/operator-framework/community-operators),
+  push operator registries, etc.
 
 ### Continuous Integration
 
