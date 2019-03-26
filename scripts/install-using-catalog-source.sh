@@ -16,8 +16,8 @@
 dir=$(realpath "$(dirname "${BASH_SOURCE}")/..")
 kubectl=${KUBECTL:-"kubectl"}
 
-registry=${REGISTRY:-$1}
-if [[ -z "${registry}" ]]; then
+REGISTRY=${REGISTRY:-$1}
+if [[ -z "${REGISTRY}" ]]; then
   echo "registry must be set by running \`install-using-catalog-source.sh <registry>\` or by setting \$REGISTRY"
   exit 1
 fi
@@ -29,6 +29,6 @@ if ! [[ "${subscription_types[@]}" =~ (^|[[:space:]])"$subscription_type"($|[[:s
   exit 1
 fi
 
-sed -e "s,quay.io/openshift/federation-operator-registry,quay.io/$registry/federation-operator-registry," $dir/olm-testing/catalog-source.yaml | oc apply -f -
+sed -e "s,quay.io/openshift/federation-operator-registry,quay.io/$REGISTRY/federation-operator-registry," $dir/olm-testing/catalog-source.yaml | $kubectl apply -f -
 $kubectl apply -f $dir/olm-testing/${subscription_type}-operator-group.yaml
 $kubectl apply -f $dir/olm-testing/${subscription_type}-subscription.yaml
