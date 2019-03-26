@@ -35,10 +35,15 @@ const (
 	// resources.
 
 	// Common fields
-	SpecField = "spec"
+	SpecField     = "spec"
+	MetadataField = "metadata"
 
 	// ServiceAccount fields
 	SecretsField = "secrets"
+
+	// Scale types
+	ReplicasField       = "replicas"
+	RetainReplicasField = "retainReplicas"
 
 	// Template fields
 	TemplateField = "template"
@@ -47,6 +52,7 @@ const (
 	PlacementField       = "placement"
 	ClusterNamesField    = "clusterNames"
 	ClusterSelectorField = "clusterSelector"
+	MatchLabelsField     = "matchLabels"
 
 	// Override fields
 	OverridesField        = "overrides"

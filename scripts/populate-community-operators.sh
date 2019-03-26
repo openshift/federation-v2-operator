@@ -12,8 +12,9 @@
 #   - src/github.com/operator-framework/community-operators
 
 PACKAGE=${PACKAGE:-"federation"}
-VERSION=${VERSION:-"0.0.6"}
+VERSION=${VERSION:-"0.0.7"}
 AREA=${AREA:-"community-operators"}
+SOURCE=${SOURCE:-"upstream-manifests"}
 
 dir=$(realpath "$(dirname "${BASH_SOURCE}")/..")
 community_operators_dir=$(realpath "${dir}/../../operator-framework/community-operators")
@@ -21,5 +22,5 @@ target_dir="${community_operators_dir}/${AREA}/${PACKAGE}"
 rm -rf $target_dir
 mkdir -p $target_dir
 
-cp -r $dir/manifests/${PACKAGE}/${VERSION}/* $target_dir
-cp $dir/manifests/${PACKAGE}/${PACKAGE}.package.yaml $target_dir
+cp -r $dir/${SOURCE}/${PACKAGE}/${VERSION}/* $target_dir
+cp $dir/${SOURCE}/${PACKAGE}/${PACKAGE}.package.yaml $target_dir

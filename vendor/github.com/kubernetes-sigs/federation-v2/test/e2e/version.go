@@ -17,6 +17,7 @@ limitations under the License.
 package e2e
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -36,12 +37,11 @@ import (
 
 	apicommon "github.com/kubernetes-sigs/federation-v2/pkg/apis/core/common"
 	fedv1a1 "github.com/kubernetes-sigs/federation-v2/pkg/apis/core/v1alpha1"
-	fedclientset "github.com/kubernetes-sigs/federation-v2/pkg/client/clientset/versioned"
-	corev1alpha1 "github.com/kubernetes-sigs/federation-v2/pkg/client/clientset/versioned/typed/core/v1alpha1"
+	genericclient "github.com/kubernetes-sigs/federation-v2/pkg/client/generic"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/sync"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/sync/version"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
-	"github.com/kubernetes-sigs/federation-v2/pkg/kubefed2/federate"
+	kfenable "github.com/kubernetes-sigs/federation-v2/pkg/kubefed2/enable"
 	"github.com/kubernetes-sigs/federation-v2/test/common"
 	"github.com/kubernetes-sigs/federation-v2/test/e2e/framework"
 
@@ -50,10 +50,6 @@ import (
 
 type testVersionAdapter interface {
 	version.VersionAdapter
-
-	// Test-specific version methods
-	Delete(qualifiedName util.QualifiedName) error
-	Update(obj pkgruntime.Object) (pkgruntime.Object, error)
 
 	// Type-agnostic template methods
 	CreateFederatedObject(obj pkgruntime.Object) (pkgruntime.Object, error)
@@ -66,17 +62,7 @@ type testVersionAdapter interface {
 
 type testNamespacedVersionAdapter struct {
 	version.VersionAdapter
-	coreClient corev1alpha1.CoreV1alpha1Interface
 	kubeClient kubeclientset.Interface
-}
-
-func (a *testNamespacedVersionAdapter) Delete(qualifiedName util.QualifiedName) error {
-	return a.coreClient.PropagatedVersions(qualifiedName.Namespace).Delete(qualifiedName.Name, nil)
-}
-
-func (a *testNamespacedVersionAdapter) Update(obj pkgruntime.Object) (pkgruntime.Object, error) {
-	version := obj.(*fedv1a1.PropagatedVersion)
-	return a.coreClient.PropagatedVersions(version.Namespace).Update(version)
 }
 
 func (a *testNamespacedVersionAdapter) CreateFederatedObject(obj pkgruntime.Object) (pkgruntime.Object, error) {
@@ -113,17 +99,7 @@ func (a *testNamespacedVersionAdapter) FederatedTypeInstance() pkgruntime.Object
 
 type testClusterVersionAdapter struct {
 	version.VersionAdapter
-	coreClient corev1alpha1.CoreV1alpha1Interface
 	kubeClient kubeclientset.Interface
-}
-
-func (a *testClusterVersionAdapter) Delete(qualifiedName util.QualifiedName) error {
-	return a.coreClient.ClusterPropagatedVersions().Delete(qualifiedName.Name, nil)
-}
-
-func (a *testClusterVersionAdapter) Update(obj pkgruntime.Object) (pkgruntime.Object, error) {
-	version := obj.(*fedv1a1.ClusterPropagatedVersion)
-	return a.coreClient.ClusterPropagatedVersions().Update(version)
 }
 
 func (a *testClusterVersionAdapter) CreateFederatedObject(obj pkgruntime.Object) (pkgruntime.Object, error) {
@@ -178,13 +154,12 @@ func (r *testVersionedResource) OverrideVersion() (string, error) {
 	return r.overrideVersion, nil
 }
 
-func newTestVersionAdapter(fedClient fedclientset.Interface, kubeClient kubeclientset.Interface, namespaced bool) testVersionAdapter {
-	adapter := version.NewVersionAdapter(fedClient, namespaced)
-	coreClient := fedClient.CoreV1alpha1()
+func newTestVersionAdapter(client genericclient.Client, kubeClient kubeclientset.Interface, namespaced bool) testVersionAdapter {
+	adapter := version.NewVersionAdapter(namespaced)
 	if namespaced {
-		return &testNamespacedVersionAdapter{adapter, coreClient, kubeClient}
+		return &testNamespacedVersionAdapter{adapter, kubeClient}
 	}
-	return &testClusterVersionAdapter{adapter, coreClient, kubeClient}
+	return &testClusterVersionAdapter{adapter, kubeClient}
 }
 
 var _ = Describe("VersionManager", func() {
@@ -204,7 +179,7 @@ var _ = Describe("VersionManager", func() {
 	var expectedStatus fedv1a1.PropagatedVersionStatus
 	var clusterNames []string
 	var versionMap map[string]string
-	var fedClient fedclientset.Interface
+	var client genericclient.Client
 	var versionName, fedObjectName util.QualifiedName
 	var adapter testVersionAdapter
 	var versionType string
@@ -242,10 +217,10 @@ var _ = Describe("VersionManager", func() {
 
 				clusterNames = []string{"cluster1", "cluster2", "cluster3"}
 
-				fedClient = f.FedClient(userAgent)
+				client = f.Client(userAgent)
 
 				kubeClient := f.KubeClient(userAgent)
-				adapter = newTestVersionAdapter(fedClient, kubeClient, namespaced)
+				adapter = newTestVersionAdapter(client, kubeClient, namespaced)
 				versionType = adapter.TypeName()
 
 				// Use a non-federated type as the federated object to
@@ -253,7 +228,7 @@ var _ = Describe("VersionManager", func() {
 				// finalizer to the object that would complicate
 				// validating garbage collection.
 				fedObject = &unstructured.Unstructured{}
-				err := federate.DecodeYAML(strings.NewReader(adapter.FederatedObjectYAML()), fedObject)
+				err := kfenable.DecodeYAML(strings.NewReader(adapter.FederatedObjectYAML()), fedObject)
 				if err != nil {
 					tl.Fatalf("Failed to parse yaml: %v", err)
 				}
@@ -315,7 +290,7 @@ var _ = Describe("VersionManager", func() {
 					ClusterVersions: version.VersionMapToClusterVersions(versionMap),
 				}
 
-				versionManager = version.NewVersionManager(fedClient, namespaced, federatedKind, targetKind, versionNamespace)
+				versionManager = version.NewVersionManager(client, namespaced, federatedKind, targetKind, versionNamespace)
 				stopChan = make(chan struct{})
 				// There shouldn't be any api objects to load, but Sync
 				// also starts the worker that will write to the API.
@@ -336,7 +311,7 @@ var _ = Describe("VersionManager", func() {
 				// Managed fixture doesn't run the garbage collector, so
 				// manual cleanup of propagated versions is required.
 				if len(versionName.Name) > 0 && framework.TestContext.TestManagedFederation {
-					err := adapter.Delete(versionName)
+					err := client.Delete(context.TODO(), adapter.NewObject(), versionName.Namespace, versionName.Name)
 					if err != nil && !errors.IsNotFound(err) {
 						tl.Errorf("Error deleting %s %q: %v", versionType, versionName, err)
 					}
@@ -348,7 +323,7 @@ var _ = Describe("VersionManager", func() {
 				if err != nil {
 					tl.Fatalf("Error updating version status: %v", err)
 				}
-				waitForPropVer(tl, adapter, versionName, expectedStatus)
+				waitForPropVer(tl, adapter, client, versionName, expectedStatus)
 			})
 
 			inSupportedScopeIt("should load versions from the API on sync", namespaced, func() {
@@ -356,10 +331,10 @@ var _ = Describe("VersionManager", func() {
 				if err != nil {
 					tl.Fatalf("Error updating version status: %v", err)
 				}
-				waitForPropVer(tl, adapter, versionName, expectedStatus)
+				waitForPropVer(tl, adapter, client, versionName, expectedStatus)
 
 				// Create a second manager and sync it
-				otherManager := version.NewVersionManager(fedClient, namespaced, federatedKind, targetKind, namespace)
+				otherManager := version.NewVersionManager(client, namespaced, federatedKind, targetKind, namespace)
 				otherManager.Sync(stopChan)
 
 				// Ensure that the second manager loaded the version
@@ -375,13 +350,13 @@ var _ = Describe("VersionManager", func() {
 
 			inSupportedScopeIt("should refresh and update after out-of-band creation", namespaced, func() {
 				// Create a second manager and use it to write a version to the api
-				otherManager := version.NewVersionManager(fedClient, namespaced, federatedKind, targetKind, namespace)
+				otherManager := version.NewVersionManager(client, namespaced, federatedKind, targetKind, namespace)
 				otherManager.Sync(stopChan)
 				err := otherManager.Update(versionedResource, clusterNames, versionMap)
 				if err != nil {
 					tl.Fatalf("Error updating version status: %v", err)
 				}
-				waitForPropVer(tl, adapter, versionName, expectedStatus)
+				waitForPropVer(tl, adapter, client, versionName, expectedStatus)
 
 				// Ensure that an updated version is written successfully
 				clusterNames, versionMap = removeOneCluster(clusterNames, versionMap)
@@ -390,7 +365,7 @@ var _ = Describe("VersionManager", func() {
 					tl.Fatalf("Error updating version status: %v", err)
 				}
 				expectedStatus.ClusterVersions = version.VersionMapToClusterVersions(versionMap)
-				waitForPropVer(tl, adapter, versionName, expectedStatus)
+				waitForPropVer(tl, adapter, client, versionName, expectedStatus)
 			})
 
 			inSupportedScopeIt("should refresh and update after out-of-band update", namespaced, func() {
@@ -398,10 +373,11 @@ var _ = Describe("VersionManager", func() {
 				if err != nil {
 					tl.Fatalf("Error updating version status: %v", err)
 				}
-				waitForPropVer(tl, adapter, versionName, expectedStatus)
+				waitForPropVer(tl, adapter, client, versionName, expectedStatus)
 
 				// Update an annotation out-of-band to ensure a conflict
-				propVer, err := adapter.Get(versionName)
+				propVer := adapter.NewObject()
+				err = client.Get(context.TODO(), propVer, versionName.Namespace, versionName.Name)
 				if err != nil {
 					tl.Errorf("Error retrieving %s %q: %v", versionType, versionName, err)
 				}
@@ -410,7 +386,8 @@ var _ = Describe("VersionManager", func() {
 					tl.Fatalf("Failed to retrieve meta accessor for %s %q: %s", versionType, versionName, err)
 				}
 				metaAccessor.SetAnnotations(map[string]string{"foo": "bar"})
-				_, err = adapter.Update(propVer)
+
+				err = client.Update(context.TODO(), propVer)
 				if err != nil {
 					tl.Errorf("Error updating %s %q: %v", versionType, versionName, err)
 				}
@@ -422,7 +399,7 @@ var _ = Describe("VersionManager", func() {
 					tl.Fatalf("Error updating version status: %v", err)
 				}
 				expectedStatus.ClusterVersions = version.VersionMapToClusterVersions(versionMap)
-				waitForPropVer(tl, adapter, versionName, expectedStatus)
+				waitForPropVer(tl, adapter, client, versionName, expectedStatus)
 			})
 
 			inSupportedScopeIt("should recreate after out-of-band deletion", namespaced, func() {
@@ -430,10 +407,10 @@ var _ = Describe("VersionManager", func() {
 				if err != nil {
 					tl.Fatalf("Error updating version status: %v", err)
 				}
-				waitForPropVer(tl, adapter, versionName, expectedStatus)
+				waitForPropVer(tl, adapter, client, versionName, expectedStatus)
 
 				// Delete the written version out-of-band
-				err = adapter.Delete(versionName)
+				err = client.Delete(context.TODO(), adapter.NewObject(), versionName.Namespace, versionName.Name)
 				if err != nil {
 					tl.Fatalf("Error deleting %s %q: %v", versionType, versionName, err)
 				}
@@ -445,7 +422,7 @@ var _ = Describe("VersionManager", func() {
 					tl.Fatalf("Error updating version status: %v", err)
 				}
 				expectedStatus.ClusterVersions = version.VersionMapToClusterVersions(versionMap)
-				waitForPropVer(tl, adapter, versionName, expectedStatus)
+				waitForPropVer(tl, adapter, client, versionName, expectedStatus)
 			})
 
 			inSupportedScopeIt("should add owner reference that ensures garbage collection when template is deleted", namespaced, func() {
@@ -465,7 +442,7 @@ var _ = Describe("VersionManager", func() {
 				if err != nil {
 					tl.Fatalf("Error updating version status: %v", err)
 				}
-				waitForPropVer(tl, adapter, versionName, expectedStatus)
+				waitForPropVer(tl, adapter, client, versionName, expectedStatus)
 
 				// Removal of the template should prompt the garbage
 				// collection of the associated version resource due to
@@ -479,7 +456,7 @@ var _ = Describe("VersionManager", func() {
 					return err
 				})
 				checkForDeletion(tl, adapter.TypeName(), versionName, func() error {
-					_, err = adapter.Get(versionName)
+					err := client.Get(context.TODO(), adapter.NewObject(), versionName.Namespace, versionName.Name)
 					return err
 
 				})
@@ -504,9 +481,10 @@ func checkForDeletion(tl common.TestLogger, typeName string, qualifiedName util.
 	}
 }
 
-func waitForPropVer(tl common.TestLogger, adapter testVersionAdapter, qualifiedName util.QualifiedName, expectedStatus fedv1a1.PropagatedVersionStatus) {
+func waitForPropVer(tl common.TestLogger, adapter testVersionAdapter, client genericclient.Client, qualifiedName util.QualifiedName, expectedStatus fedv1a1.PropagatedVersionStatus) {
 	err := wait.PollImmediate(framework.PollInterval, framework.TestContext.SingleCallTimeout, func() (bool, error) {
-		propVer, err := adapter.Get(qualifiedName)
+		propVer := adapter.NewObject()
+		err := client.Get(context.TODO(), propVer, qualifiedName.Namespace, qualifiedName.Name)
 		if errors.IsNotFound(err) {
 			return false, nil
 		}

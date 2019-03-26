@@ -16,6 +16,7 @@ vet: populate-federation-gopath
 .ONESHELL:
 managed-e2e: populate-federation-gopath
 	cd /go/src/github.com/kubernetes-sigs/federation-v2
+	DOCKER_BUILD="/bin/sh -c " GIT_VERSION="0.0.7" make controller-native
 	./scripts/download-binaries.sh
 	TEST_ASSET_PATH="/go/src/github.com/kubernetes-sigs/federation-v2/bin" \
 	TEST_ASSET_ETCD="/go/src/github.com/kubernetes-sigs/federation-v2/bin/etcd" \

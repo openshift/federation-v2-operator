@@ -34,7 +34,7 @@ FROM openshift/origin-base
 
 # copy in binaries
 WORKDIR /root/
-COPY --from=builder /go/src/github.com/kubernetes-sigs/federation-v2/bin/hyperfed /root/hyperfed
+COPY --from=builder /go/src/github.com/kubernetes-sigs/federation-v2/bin/hyperfed-linux /root/hyperfed
 RUN ln -s hyperfed controller-manager && ln -s hyperfed kubefed2
 
 # user directive - this image does not require root

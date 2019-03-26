@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Federation v2 Authors.
+Copyright 2018 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,11 +28,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kubernetes-sigs/federation-v2/pkg/apis/core/typeconfig"
-	fedv1a1 "github.com/kubernetes-sigs/federation-v2/pkg/apis/core/v1alpha1"
 	fedschedulingv1a1 "github.com/kubernetes-sigs/federation-v2/pkg/apis/scheduling/v1alpha1"
-	clientset "github.com/kubernetes-sigs/federation-v2/pkg/client/clientset/versioned"
-	fedclientset "github.com/kubernetes-sigs/federation-v2/pkg/client/clientset/versioned"
+	genericclient "github.com/kubernetes-sigs/federation-v2/pkg/client/generic"
+	"github.com/kubernetes-sigs/federation-v2/pkg/controller/schedulingmanager"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
+	"github.com/kubernetes-sigs/federation-v2/pkg/kubefed2"
+	kfenable "github.com/kubernetes-sigs/federation-v2/pkg/kubefed2/enable"
 	"github.com/kubernetes-sigs/federation-v2/pkg/schedulingtypes"
 	"github.com/kubernetes-sigs/federation-v2/test/common"
 	"github.com/kubernetes-sigs/federation-v2/test/e2e/framework"
@@ -42,7 +43,7 @@ import (
 	. "github.com/onsi/ginkgo"
 )
 
-var _ = Describe("ReplicaSchedulingPreferences", func() {
+var _ = Describe("Scheduling", func() {
 	f := framework.NewFederationFramework("scheduling")
 	tl := framework.NewE2ELogger()
 
@@ -60,9 +61,11 @@ var _ = Describe("ReplicaSchedulingPreferences", func() {
 	}
 
 	var kubeConfig *restclient.Config
-	var fedClient fedclientset.Interface
+	var genericClient genericclient.Client
 	var namespace string
 	var clusterNames []string
+	var controllerFixture *managed.ControllerFixture
+	var controller *schedulingmanager.SchedulerController
 	typeConfigs := make(map[string]typeconfig.Interface)
 
 	BeforeEach(func() {
@@ -74,12 +77,7 @@ var _ = Describe("ReplicaSchedulingPreferences", func() {
 				tl.Fatalf("Error initializing dynamic client: %v", err)
 			}
 			for targetTypeName := range schedulingTypes {
-				typeConfig := &fedv1a1.FederatedTypeConfig{}
-				key := client.ObjectKey{
-					Namespace: f.FederationSystemNamespace(),
-					Name:      targetTypeName,
-				}
-				err = dynClient.Get(context.Background(), key, typeConfig)
+				typeConfig, err := common.GetTypeConfig(dynClient, targetTypeName, f.FederationSystemNamespace())
 				if err != nil {
 					tl.Fatalf("Error retrieving federatedtypeconfig for %q: %v", targetTypeName, err)
 				}
@@ -87,101 +85,169 @@ var _ = Describe("ReplicaSchedulingPreferences", func() {
 			}
 
 			clusterNames = f.ClusterNames(userAgent)
-			fedClient = f.FedClient(userAgent)
+			genericClient = f.Client(userAgent)
 			kubeConfig = f.KubeConfig()
 		}
 		namespace = f.TestNamespaceName()
 		if framework.TestContext.RunControllers() {
-			fixture := managed.NewSchedulerControllerFixture(tl, f.ControllerConfig())
-			f.RegisterFixture(fixture)
+			controllerFixture, controller = managed.NewSchedulerControllerFixture(tl, f.ControllerConfig())
+			f.RegisterFixture(controllerFixture)
 		}
 	})
 
-	testCases := map[string]struct {
-		total         int32
-		weight1       int64
-		weight2       int64
-		min1          int64
-		min2          int64
-		cluster1      int32
-		cluster2      int32
-		noPreferences bool
-	}{
-		"replicas spread equally in clusters with no explicit per cluster preferences": {
-			total:         int32(4),
-			cluster1:      int32(2),
-			cluster2:      int32(2),
-			noPreferences: true,
-		},
-		"replicas spread in proportion of weights when explicit preferences with weights specified": {
-			total:    int32(6),
-			weight1:  int64(2),
-			weight2:  int64(1),
-			min1:     int64(0),
-			min2:     int64(0),
-			cluster1: int32(4),
-			cluster2: int32(2),
-		},
-		"replicas spread considering min replicas when both minreplica and weights specified": {
-			total:    int32(6),
-			weight1:  int64(2),
-			weight2:  int64(1),
-			min1:     int64(3),
-			min2:     int64(3),
-			cluster1: int32(3),
-			cluster2: int32(3),
-		},
-	}
+	Describe("SchedulingManager", func() {
+		Context("when federatedtypeconfig resources are changed", func() {
+			It("related scheduler and plugin controllers should be dynamically disabled/enabled", func() {
+				if !framework.TestContext.RunControllers() {
+					framework.Skipf("The scheduling manager can only be tested when controllers are running in-process.")
+				}
 
-	for key := range schedulingTypes {
-		typeConfigName := key
+				// make sure scheduler/plugin initialization are done before our test
+				By("Waiting for scheduler/plugin controllers are initialized in scheduling manager")
+				waitForSchedulerStarted(tl, controller, schedulingTypes)
 
-		Describe(fmt.Sprintf("scheduling for federated %s", typeConfigName), func() {
-			for testName, tc := range testCases {
-				It(fmt.Sprintf("should result in %s", testName), func() {
+				By("Deleting federatedtypeconfig resources for scheduler/plugin controllers")
+				for targetTypeName := range schedulingTypes {
+					deleteTypeConfigResource(targetTypeName, f.FederationSystemNamespace(), kubeConfig, tl)
+				}
 
-					typeConfig, ok := typeConfigs[typeConfigName]
-					if !ok {
-						tl.Fatalf("Unable to find type config for %q", typeConfigName)
-					}
-					federatedKind := typeConfig.GetFederatedType().Kind
+				By("Waiting for scheduler/plugin controllers are destroyed in scheduling manager")
+				waitForSchedulerDeleted(tl, controller, schedulingTypes)
 
-					clusterCount := len(clusterNames)
-					if clusterCount != 2 {
-						framework.Skipf("Tests of ReplicaSchedulingPreferences requires 2 clusters but got: %d", clusterCount)
-					}
+				By("Enabling federatedtypeconfig resources again for scheduler/plugin controllers")
+				for targetTypeName := range schedulingTypes {
+					enableTypeConfigResource(targetTypeName, f.FederationSystemNamespace(), kubeConfig, tl)
+				}
 
-					var rspSpec fedschedulingv1a1.ReplicaSchedulingPreferenceSpec
-					if tc.noPreferences {
-						rspSpec = rspSpecWithoutClusterList(tc.total, federatedKind)
-					} else {
-						rspSpec = rspSpecWithClusterList(tc.total, tc.weight1, tc.weight2, tc.min1, tc.min2, clusterNames, federatedKind)
-					}
-
-					expected := map[string]int32{
-						clusterNames[0]: tc.cluster1,
-						clusterNames[1]: tc.cluster2,
-					}
-
-					name, err := createTestObjs(tl, fedClient, typeConfig, kubeConfig, rspSpec, namespace)
-					if err != nil {
-						tl.Fatalf("Creation of test objects failed in federation: %v", err)
-					}
-
-					err = waitForMatchingFederatedObject(tl, typeConfig, kubeConfig, name, namespace, expected)
-					if err != nil {
-						tl.Fatalf("Failed waiting for matching federated object: %v", err)
-					}
-
-					err = deleteTestObj(typeConfig, kubeConfig, name, namespace)
-					if err != nil {
-						tl.Fatalf("Deletion of test object failed in fedeartion: %v", err)
-					}
-				})
-			}
+				By("Waiting for the scheduler/plugin controllers are started in scheduling manager")
+				waitForSchedulerStarted(tl, controller, schedulingTypes)
+			})
 		})
-	}
+	})
+
+	Describe("ReplicaSchedulingPreferences", func() {
+		testCases := map[string]struct {
+			total         int32
+			weight1       int64
+			weight2       int64
+			min1          int64
+			min2          int64
+			cluster1      int32
+			cluster2      int32
+			noPreferences bool
+		}{
+			"replicas spread equally in clusters with no explicit per cluster preferences": {
+				total:         int32(4),
+				cluster1:      int32(2),
+				cluster2:      int32(2),
+				noPreferences: true,
+			},
+			"replicas spread in proportion of weights when explicit preferences with weights specified": {
+				total:    int32(6),
+				weight1:  int64(2),
+				weight2:  int64(1),
+				min1:     int64(0),
+				min2:     int64(0),
+				cluster1: int32(4),
+				cluster2: int32(2),
+			},
+			"replicas spread considering min replicas when both minreplica and weights specified": {
+				total:    int32(6),
+				weight1:  int64(2),
+				weight2:  int64(1),
+				min1:     int64(3),
+				min2:     int64(3),
+				cluster1: int32(3),
+				cluster2: int32(3),
+			},
+		}
+
+		for key := range schedulingTypes {
+			typeConfigName := key
+
+			Describe(fmt.Sprintf("scheduling for federated %s", typeConfigName), func() {
+				for testName, tc := range testCases {
+					It(fmt.Sprintf("should result in %s", testName), func() {
+
+						typeConfig, ok := typeConfigs[typeConfigName]
+						if !ok {
+							tl.Fatalf("Unable to find type config for %q", typeConfigName)
+						}
+						federatedKind := typeConfig.GetFederatedType().Kind
+
+						clusterCount := len(clusterNames)
+						if clusterCount != 2 {
+							framework.Skipf("Tests of ReplicaSchedulingPreferences requires 2 clusters but got: %d", clusterCount)
+						}
+
+						var rspSpec fedschedulingv1a1.ReplicaSchedulingPreferenceSpec
+						if tc.noPreferences {
+							rspSpec = rspSpecWithoutClusterList(tc.total, federatedKind)
+						} else {
+							rspSpec = rspSpecWithClusterList(tc.total, tc.weight1, tc.weight2, tc.min1, tc.min2, clusterNames, federatedKind)
+						}
+
+						expected := map[string]int32{
+							clusterNames[0]: tc.cluster1,
+							clusterNames[1]: tc.cluster2,
+						}
+
+						name, err := createTestObjs(tl, genericClient, typeConfig, kubeConfig, rspSpec, namespace)
+						if err != nil {
+							tl.Fatalf("Creation of test objects failed in federation: %v", err)
+						}
+
+						err = waitForMatchingFederatedObject(tl, typeConfig, kubeConfig, name, namespace, expected)
+						if err != nil {
+							tl.Fatalf("Failed waiting for matching federated object: %v", err)
+						}
+
+						err = deleteTestObj(typeConfig, kubeConfig, name, namespace)
+						if err != nil {
+							tl.Fatalf("Deletion of test object failed in fedeartion: %v", err)
+						}
+					})
+				}
+			})
+		}
+	})
 })
+
+func waitForSchedulerDeleted(tl common.TestLogger, controller *schedulingmanager.SchedulerController, schedulingTypes map[string]schedulingtypes.SchedulerFactory) {
+	err := wait.PollImmediate(framework.PollInterval, framework.TestContext.SingleCallTimeout, func() (bool, error) {
+		if controller.HasScheduler(schedulingtypes.RSPKind) {
+			return false, nil
+		}
+		for targetTypeName := range schedulingTypes {
+			if controller.HasSchedulerPlugin(targetTypeName) {
+				return false, nil
+			}
+		}
+
+		return true, nil
+	})
+	if err != nil {
+		tl.Fatalf("Error stopping for scheduler/plugin controllers: %v", err)
+	}
+}
+
+func waitForSchedulerStarted(tl common.TestLogger, controller *schedulingmanager.SchedulerController, schedulingTypes map[string]schedulingtypes.SchedulerFactory) {
+	err := wait.PollImmediate(framework.PollInterval, framework.TestContext.SingleCallTimeout, func() (bool, error) {
+		if !controller.HasScheduler(schedulingtypes.RSPKind) {
+			return false, nil
+		}
+		for targetTypeName := range schedulingTypes {
+			if !controller.HasSchedulerPlugin(targetTypeName) {
+				return false, nil
+			}
+		}
+
+		return true, nil
+	})
+	if err != nil {
+		tl.Fatalf("Error starting for scheduler and plugins: %v", err)
+	}
+}
 
 func rspSpecWithoutClusterList(total int32, targetKind string) fedschedulingv1a1.ReplicaSchedulingPreferenceSpec {
 	return fedschedulingv1a1.ReplicaSchedulingPreferenceSpec{
@@ -208,7 +274,7 @@ func rspSpecWithClusterList(total int32, w1, w2, min1, min2 int64, clusters []st
 	return rspSpec
 }
 
-func createTestObjs(tl common.TestLogger, fedClient clientset.Interface, typeConfig typeconfig.Interface, kubeConfig *restclient.Config, rspSpec fedschedulingv1a1.ReplicaSchedulingPreferenceSpec, namespace string) (string, error) {
+func createTestObjs(tl common.TestLogger, client genericclient.Client, typeConfig typeconfig.Interface, kubeConfig *restclient.Config, rspSpec fedschedulingv1a1.ReplicaSchedulingPreferenceSpec, namespace string) (string, error) {
 	federatedTypeAPIResource := typeConfig.GetFederatedType()
 	federatedTypeClient, err := util.NewResourceClient(kubeConfig, &federatedTypeAPIResource)
 	if err != nil {
@@ -237,7 +303,7 @@ func createTestObjs(tl common.TestLogger, fedClient clientset.Interface, typeCon
 		},
 		Spec: rspSpec,
 	}
-	_, err = fedClient.SchedulingV1alpha1().ReplicaSchedulingPreferences(namespace).Create(rsp)
+	err = client.Create(context.TODO(), rsp)
 	if err != nil {
 		return "", err
 	}
@@ -308,4 +374,28 @@ func int32MapToInt64(original map[string]int32) map[string]int64 {
 		result[k] = int64(v)
 	}
 	return result
+}
+
+func enableTypeConfigResource(name, namespace string, config *restclient.Config, tl common.TestLogger) {
+	for _, enableTypeDirective := range managed.LoadEnableTypeDirectives(tl) {
+		resources, err := kfenable.GetResources(config, enableTypeDirective)
+		if err != nil {
+			tl.Fatalf("Error retrieving resource definitions for EnableTypeDirective %q: %v", enableTypeDirective.Name, err)
+		}
+
+		if enableTypeDirective.Name == name {
+			err = kfenable.CreateResources(nil, config, resources, namespace)
+			if err != nil {
+				tl.Fatalf("Error creating resources for EnableTypeDirective %q: %v", enableTypeDirective.Name, err)
+			}
+		}
+	}
+}
+
+func deleteTypeConfigResource(name, namespace string, config *restclient.Config, tl common.TestLogger) {
+	qualifiedName := util.QualifiedName{Namespace: namespace, Name: name}
+	err := kubefed2.DisableFederation(nil, config, qualifiedName, true, false)
+	if err != nil {
+		tl.Fatalf("Error disabling federation of target type %q: %v", qualifiedName, err)
+	}
 }

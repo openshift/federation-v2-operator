@@ -24,6 +24,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-sigs/federation-v2/pkg/apis/core/typeconfig"
+	genericclient "github.com/kubernetes-sigs/federation-v2/pkg/client/generic"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
 	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -52,26 +53,30 @@ type Plugin struct {
 
 func NewPlugin(controllerConfig *util.ControllerConfig, eventHandlers SchedulerEventHandlers, typeConfig typeconfig.Interface) (*Plugin, error) {
 	targetAPIResource := typeConfig.GetTarget()
-	fedClient, kubeClient, crClient := controllerConfig.AllClients(fmt.Sprintf("%s-replica-scheduler", strings.ToLower(targetAPIResource.Kind)))
+	userAgent := fmt.Sprintf("%s-replica-scheduler", strings.ToLower(targetAPIResource.Kind))
+	client := genericclient.NewForConfigOrDieWithUserAgent(controllerConfig.KubeConfig, userAgent)
+
+	targetInformer, err := util.NewFederatedInformer(
+		controllerConfig,
+		client,
+		&targetAPIResource,
+		eventHandlers.ClusterEventHandler,
+		eventHandlers.ClusterLifecycleHandlers,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	p := &Plugin{
-		targetInformer: util.NewFederatedInformer(
-			fedClient,
-			kubeClient,
-			crClient,
-			controllerConfig.FederationNamespaces,
-			&targetAPIResource,
-			eventHandlers.ClusterEventHandler,
-			eventHandlers.ClusterLifecycleHandlers,
-		),
-		typeConfig:  typeConfig,
-		stopChannel: make(chan struct{}),
+		targetInformer: targetInformer,
+		typeConfig:     typeConfig,
+		stopChannel:    make(chan struct{}),
 	}
 
 	targetNamespace := controllerConfig.TargetNamespace
 	federationEventHandler := eventHandlers.FederationEventHandler
 
 	federatedTypeAPIResource := typeConfig.GetFederatedType()
-	var err error
 	p.federatedTypeClient, err = util.NewResourceClient(controllerConfig.KubeConfig, &federatedTypeAPIResource)
 	if err != nil {
 		return nil, err
