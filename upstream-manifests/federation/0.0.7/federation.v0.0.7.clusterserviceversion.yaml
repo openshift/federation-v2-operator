@@ -140,7 +140,7 @@ spec:
           region: us-east-1
           zone: us-east-1a
 
-    See also the upstream [user guide](https://github.com/kubernetes-sigs/federation-v2/blob/master/docs/userguide.md#join-clusters) for more information.
+    See also the upstream [user guide](https://github.com/kubernetes-sigs/federation-v2/blob/v0.0.7/docs/userguide.md#join-clusters) for more information.
 
     ### Unjoining Clusters
 
@@ -174,8 +174,7 @@ spec:
 
 
         kubefed2 enable deployments.extensions \
-          --federation-namespace=<namespace> \
-          --registry-namespace=<namespace>
+          --federation-namespace=<namespace>
     
     Running this command produces a new CRD in the hosting cluster to be the
     federation API surface for the deployments resource.
@@ -203,7 +202,7 @@ spec:
     `FederatedTypeConfig` resources created. You must run `kubefed2 enable`
     operation for each API type you want to add federation capability for.
 
-    See also the upstream [user guide](https://github.com/kubernetes-sigs/federation-v2/blob/master/docs/userguide.md#enabling-federation-of-an-api-type) for more information.
+    See also the upstream [user guide](https://github.com/kubernetes-sigs/federation-v2/blob/v0.0.7/docs/userguide.md#enabling-federation-of-an-api-type) for more information.
 
     ### Example: federating deployments
 
@@ -255,9 +254,9 @@ spec:
 
     To fully remove the API surface, use the `--delete-from-api` flag:
 
-        kubefed2 disable deployments.extensions --federation-namespace=<namespace>
+        kubefed2 disable deployments.extensions --federation-namespace=<namespace> --delete-from-api
 
-    See also the upstream [user guide](https://github.com/kubernetes-sigs/federation-v2/blob/master/docs/userguide.md#disabling-federation-of-an-api-type) for more information.
+    See also the upstream [user guide](https://github.com/kubernetes-sigs/federation-v2/blob/v0.0.7/docs/userguide.md#disabling-federation-of-an-api-type) for more information.
   keywords: ['kubernetes', 'federation', 'hybrid', 'hybrid cloud', 'multi-cluster', 'cluster']
   version: 0.0.7
   maturity: alpha
@@ -363,7 +362,7 @@ spec:
                     - --registry-namespace=$(CLUSTER_REGISTRY_NAMESPACE)
                     - -v=5
                     - --logtostderr
-                  imagePullPolicy: Always
+                  imagePullPolicy: IfNotPresent
                   env:
                   - name: FEDERATION_NAMESPACE
                     valueFrom:
