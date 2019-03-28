@@ -12,6 +12,7 @@ metadata:
     certified: "false"
     containerImage: "quay.io/kubernetes-multicluster/federation-v2:v0.0.7"
     createdAt: "2019-01-01T00:00:00Z"
+    repository: https://github.com/openshift/federation-v2-operator
 spec:
   displayName: Federation
   description: |
@@ -265,6 +266,9 @@ spec:
   labels:
     alm-owner-federation: federation
     alm-status-descriptors: federation.v0.0.7
+  links:
+  - name: Federation Concepts
+    url: https://github.com/kubernetes-sigs/federation-v2#concepts
   installModes:
   - type: OwnNamespace
     supported: true
