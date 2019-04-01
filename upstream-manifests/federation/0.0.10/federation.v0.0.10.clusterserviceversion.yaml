@@ -13,6 +13,42 @@ metadata:
     containerImage: "quay.io/kubernetes-multicluster/federation-v2:v0.0.10"
     createdAt: "2019-01-01T00:00:00Z"
     repository: https://github.com/openshift/federation-v2-operator
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "clusterregistry.k8s.io/v1alpha1",
+          "kind": "Cluster",
+          "metadata": {
+            "name": "cluster-name"
+          },
+          "spec": {
+            "authInfo": {},
+            "kubernetesApiEndpoints": {
+              "serverEndpoints": [
+                {
+                  "clientCIDR": "0.0.0.0/0",
+                  "serverAddress": "https://cluster-name.example.com:6443"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "apiVersion": "core.federation.k8s.io/v1alpha1",
+          "kind": "FederatedCluster",
+          "metadata": {
+            "name": "cluster-name"
+          },
+          "spec": {
+            "clusterRef": {
+              "name": "cluster-name"
+            },
+            "secretRef": {
+              "name": "<name-of-secret>"
+            }
+          }
+        }
+      ]
 spec:
   displayName: Federation
   description: |
