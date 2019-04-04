@@ -20,7 +20,7 @@ fi
 
 UPSTREAM=${UPSTREAM:-}
 dockerfile=olm-testing/Dockerfile
-if [[ -n "UPSTREAM" ]]; then
+if [[ -n "$UPSTREAM" ]]; then
   dockerfile=olm-testing/Dockerfile.upstream
 fi
 
