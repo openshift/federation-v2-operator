@@ -21,9 +21,9 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kubernetes-sigs/federation-v2/pkg/apis/core/typeconfig"
+	genericclient "github.com/kubernetes-sigs/federation-v2/pkg/client/generic"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
 	"github.com/kubernetes-sigs/federation-v2/test/common"
 	"github.com/kubernetes-sigs/federation-v2/test/e2e/framework"
@@ -49,19 +49,12 @@ var _ = Describe("Federated", func() {
 		fixture := typeConfigFixtures[key]
 		Describe(fmt.Sprintf("%q", typeConfigName), func() {
 			It("should be created, read, updated and deleted successfully", func() {
-				// TODO (font): e2e tests for federated Namespace using a
-				// test managed federation does not work until k8s
-				// namespace controller is added.
-				if typeConfigName == util.NamespaceName && framework.TestContext.TestManagedFederation {
-					framework.Skipf("Federated %s not supported for test managed federation.", typeConfigName)
-				}
-
 				// Lookup the type config from the api
-				dynClient, err := client.New(f.KubeConfig(), client.Options{})
+				client, err := genericclient.New(f.KubeConfig())
 				if err != nil {
 					tl.Fatalf("Error initializing dynamic client: %v", err)
 				}
-				typeConfig, err := common.GetTypeConfig(dynClient, typeConfigName, f.FederationSystemNamespace())
+				typeConfig, err := common.GetTypeConfig(client, typeConfigName, f.FederationSystemNamespace())
 				if err != nil {
 					tl.Fatalf("Error retrieving federatedtypeconfig %q: %v", typeConfigName, err)
 				}
@@ -75,6 +68,11 @@ var _ = Describe("Federated", func() {
 					if err != nil {
 						return nil, nil, err
 					}
+					if typeConfig.GetTarget().Kind == util.NamespaceKind {
+						// Namespace crud testing needs to have the same name as its namespace.
+						targetObject.SetName(namespace)
+						targetObject.SetNamespace(namespace)
+					}
 					overrides, err := common.OverridesFromFixture(clusterNames, fixture)
 					if err != nil {
 						return nil, nil, err
@@ -82,7 +80,8 @@ var _ = Describe("Federated", func() {
 					return targetObject, overrides, err
 				}
 
-				validateCrud(f, tl, typeConfig, testObjectsFunc)
+				crudTester, targetObject, overrides := initCrudTest(f, tl, typeConfig, testObjectsFunc)
+				crudTester.CheckLifecycle(targetObject, overrides)
 			})
 		})
 	}
@@ -131,11 +130,4 @@ func initCrudTest(f framework.FederationFramework, tl common.TestLogger,
 	}
 
 	return crudTester, targetObject, overrides
-}
-
-func validateCrud(f framework.FederationFramework, tl common.TestLogger,
-	typeConfig typeconfig.Interface, testObjectsFunc testObjectsAccessor) {
-
-	crudTester, targetObject, overrides := initCrudTest(f, tl, typeConfig, testObjectsFunc)
-	crudTester.CheckLifecycle(targetObject, overrides)
 }

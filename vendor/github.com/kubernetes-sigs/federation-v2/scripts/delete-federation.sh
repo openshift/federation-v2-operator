@@ -23,50 +23,34 @@ set -o pipefail
 
 source "$(dirname "${BASH_SOURCE}")/util.sh"
 
-function delete-script-deployment() {
-  # Remove cluster registry CRD
-  ${KCD} -f vendor/k8s.io/cluster-registry/cluster-registry-crd.yaml
-
-  # Remove public namespace
-  if [[ ! "${NAMESPACED}" ]]; then
-    ${KCD} namespace ${PUBLIC_NS}
-  fi
-
-  # Disable federation of all types
-  for ftc in $(kubectl get federatedtypeconfig -n "${NS}" -o=jsonpath={.items..metadata.name}); do
-    ./bin/kubefed2 disable "${ftc}" --delete-from-api --federation-namespace="${NS}"
-  done
-
-  # Remove federation CRDs, namespace, RBAC and deployment resources.
-  if [[ ! "${USE_LATEST}" ]]; then
-    if [[ "${NAMESPACED}" ]]; then
-      ${KCD} -n "${NS}" -f hack/install-namespaced.yaml
-    else
-      ${KCD} -f hack/install.yaml
-    fi
-  else
-    ${KCD} -f hack/install-latest.yaml
-  fi
-}
-
 function delete-helm-deployment() {
-  # Clean cluster registry
-  ${KCD} crd clusters.clusterregistry.k8s.io
+  if [[ ! "${NAMESPACED}" || "${DELETE_CLUSTER_RESOURCE}" ]]; then
+    # Clean cluster registry
+    ${KCD} crd clusters.clusterregistry.k8s.io
+  fi
+
   if [[ ! "${NAMESPACED}" ]]; then
       ${KCD} namespace ${PUBLIC_NS}
   fi
 
   # Clean federation resources
   ${KCD} -n "${NS}" FederatedTypeConfig --all
-  ${KCD} crd $(kubectl get crd | grep -E 'federation.k8s.io' | awk '{print $1}')
+  if [[ ! "${NAMESPACED}" || "${DELETE_CLUSTER_RESOURCE}" ]]; then
+    ${KCD} crd $(kubectl get crd | grep -E 'federation.k8s.io' | awk '{print $1}')
+  fi
 
-  helm delete --purge federation-v2
+  if [[ "${NAMESPACED}" ]]; then
+    helm delete --purge federation-v2-${NS}
+  else
+    helm delete --purge federation-v2
+  fi
 }
 
 KCD="kubectl --ignore-not-found=true delete"
 NS="${FEDERATION_NAMESPACE:-federation-system}"
 PUBLIC_NS=kube-multicluster-public
 NAMESPACED="${NAMESPACED:-}"
+DELETE_CLUSTER_RESOURCE="${DELETE_CLUSTER_RESOURCE:-}"
 
 IMAGE_NAME=`kubectl get deploy -n ${NS} -oyaml | grep "image:" | awk '{print $2}'`
 LATEST_IMAGE_NAME=quay.io/kubernetes-multicluster/federation-v2:latest
@@ -89,19 +73,12 @@ for c in ${JOINED_CLUSTERS}; do
 done
 
 # Deploy federation resources
-USE_CHART=${USE_CHART:-false}
-if [[ ${USE_CHART} == true ]]; then
-  delete-helm-deployment
-else
-  delete-script-deployment
-fi
+delete-helm-deployment
 
 ${KCD} ns "${NS}"
 
 # Remove permissive rolebinding that allows federation controllers to run.
-if [[ "${NAMESPACED}" ]]; then
-  ${KCD} -n "${NS}" rolebinding federation-admin
-else
+if [[ ! "${NAMESPACED}" ]]; then
   ${KCD} clusterrolebinding federation-admin
 fi
 

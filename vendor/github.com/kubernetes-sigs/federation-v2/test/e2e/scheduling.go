@@ -25,7 +25,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kubernetes-sigs/federation-v2/pkg/apis/core/typeconfig"
 	fedschedulingv1a1 "github.com/kubernetes-sigs/federation-v2/pkg/apis/scheduling/v1alpha1"
@@ -37,7 +36,6 @@ import (
 	"github.com/kubernetes-sigs/federation-v2/pkg/schedulingtypes"
 	"github.com/kubernetes-sigs/federation-v2/test/common"
 	"github.com/kubernetes-sigs/federation-v2/test/e2e/framework"
-	"github.com/kubernetes-sigs/federation-v2/test/e2e/framework/managed"
 	restclient "k8s.io/client-go/rest"
 
 	. "github.com/onsi/ginkgo"
@@ -64,20 +62,20 @@ var _ = Describe("Scheduling", func() {
 	var genericClient genericclient.Client
 	var namespace string
 	var clusterNames []string
-	var controllerFixture *managed.ControllerFixture
-	var controller *schedulingmanager.SchedulerController
+	var controllerFixture *framework.ControllerFixture
+	var controller *schedulingmanager.SchedulingManager
 	typeConfigs := make(map[string]typeconfig.Interface)
 
 	BeforeEach(func() {
 		// The following setup is shared across tests but must be
 		// performed at test time rather than at test collection.
 		if kubeConfig == nil {
-			dynClient, err := client.New(f.KubeConfig(), client.Options{})
+			client, err := genericclient.New(f.KubeConfig())
 			if err != nil {
 				tl.Fatalf("Error initializing dynamic client: %v", err)
 			}
 			for targetTypeName := range schedulingTypes {
-				typeConfig, err := common.GetTypeConfig(dynClient, targetTypeName, f.FederationSystemNamespace())
+				typeConfig, err := common.GetTypeConfig(client, targetTypeName, f.FederationSystemNamespace())
 				if err != nil {
 					tl.Fatalf("Error retrieving federatedtypeconfig for %q: %v", targetTypeName, err)
 				}
@@ -90,7 +88,7 @@ var _ = Describe("Scheduling", func() {
 		}
 		namespace = f.TestNamespaceName()
 		if framework.TestContext.RunControllers() {
-			controllerFixture, controller = managed.NewSchedulerControllerFixture(tl, f.ControllerConfig())
+			controllerFixture, controller = framework.NewSchedulingManagerFixture(tl, f.ControllerConfig())
 			f.RegisterFixture(controllerFixture)
 		}
 	})
@@ -213,15 +211,11 @@ var _ = Describe("Scheduling", func() {
 	})
 })
 
-func waitForSchedulerDeleted(tl common.TestLogger, controller *schedulingmanager.SchedulerController, schedulingTypes map[string]schedulingtypes.SchedulerFactory) {
+func waitForSchedulerDeleted(tl common.TestLogger, controller *schedulingmanager.SchedulingManager, schedulingTypes map[string]schedulingtypes.SchedulerFactory) {
 	err := wait.PollImmediate(framework.PollInterval, framework.TestContext.SingleCallTimeout, func() (bool, error) {
-		if controller.HasScheduler(schedulingtypes.RSPKind) {
+		scheduler := controller.GetScheduler(schedulingtypes.RSPKind)
+		if scheduler != nil {
 			return false, nil
-		}
-		for targetTypeName := range schedulingTypes {
-			if controller.HasSchedulerPlugin(targetTypeName) {
-				return false, nil
-			}
 		}
 
 		return true, nil
@@ -231,13 +225,14 @@ func waitForSchedulerDeleted(tl common.TestLogger, controller *schedulingmanager
 	}
 }
 
-func waitForSchedulerStarted(tl common.TestLogger, controller *schedulingmanager.SchedulerController, schedulingTypes map[string]schedulingtypes.SchedulerFactory) {
+func waitForSchedulerStarted(tl common.TestLogger, controller *schedulingmanager.SchedulingManager, schedulingTypes map[string]schedulingtypes.SchedulerFactory) {
 	err := wait.PollImmediate(framework.PollInterval, framework.TestContext.SingleCallTimeout, func() (bool, error) {
-		if !controller.HasScheduler(schedulingtypes.RSPKind) {
+		scheduler := controller.GetScheduler(schedulingtypes.RSPKind)
+		if scheduler == nil {
 			return false, nil
 		}
 		for targetTypeName := range schedulingTypes {
-			if !controller.HasSchedulerPlugin(targetTypeName) {
+			if !scheduler.HasPlugin(targetTypeName) {
 				return false, nil
 			}
 		}
@@ -377,7 +372,7 @@ func int32MapToInt64(original map[string]int32) map[string]int64 {
 }
 
 func enableTypeConfigResource(name, namespace string, config *restclient.Config, tl common.TestLogger) {
-	for _, enableTypeDirective := range managed.LoadEnableTypeDirectives(tl) {
+	for _, enableTypeDirective := range framework.LoadEnableTypeDirectives(tl) {
 		resources, err := kfenable.GetResources(config, enableTypeDirective)
 		if err != nil {
 			tl.Fatalf("Error retrieving resource definitions for EnableTypeDirective %q: %v", enableTypeDirective.Name, err)

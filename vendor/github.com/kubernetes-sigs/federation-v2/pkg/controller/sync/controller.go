@@ -167,7 +167,7 @@ func newFederationSyncController(controllerConfig *util.ControllerConfig, typeCo
 
 	s.fedAccessor, err = NewFederatedResourceAccessor(
 		controllerConfig, typeConfig, fedNamespaceAPIResource,
-		client, s.worker.EnqueueObject, s.informer, s.updater)
+		client, s.worker.EnqueueObject, s.informer, s.updater, recorder)
 	if err != nil {
 		return nil, err
 	}
@@ -242,15 +242,21 @@ func (s *FederationSyncController) reconcile(qualifiedName util.QualifiedName) u
 		return util.StatusNotSynced
 	}
 
+	kind := s.typeConfig.GetFederatedType().Kind
+
+	// TODO(marun) Handle the case where the resource has the managed
+	// label but does not have a managing resource.  Strip the label
+	// or remove the resource?
+
 	fedResource, err := s.fedAccessor.FederatedResource(qualifiedName)
 	if err != nil {
+		runtime.HandleError(errors.Wrapf(err, "Error creating FederatedResource helper for %s %q", kind, qualifiedName))
 		return util.StatusError
 	}
 	if fedResource == nil {
 		return util.StatusAllOK
 	}
 
-	kind := s.typeConfig.GetFederatedType().Kind
 	key := fedResource.FederatedName().String()
 
 	glog.V(4).Infof("Starting to reconcile %s %q", kind, key)
@@ -261,295 +267,103 @@ func (s *FederationSyncController) reconcile(qualifiedName util.QualifiedName) u
 		glog.V(3).Infof("Handling deletion of %s %q", kind, key)
 		err := fedResource.EnsureDeletion()
 		if err != nil {
-			msg := "Failed to delete %s %q: %v"
-			args := []interface{}{kind, key, err}
-			runtime.HandleError(errors.Errorf(msg, args...))
-			s.eventRecorder.Eventf(fedResource.Object(), corev1.EventTypeWarning, "DeleteFailed", msg, args...)
+			// TODO(marun) Log a warning rather than handle an error
+			// when waiting for resources to be deleted in underlying
+			// clusters.
+
+			// It is not possible to record events on resources marked for deletion.
+			runtime.HandleError(errors.Wrapf(err, "Unable to delete %s %q", kind, key))
 			return util.StatusError
 		}
 		// It should now be possible to garbage collect the finalization target.
 		return util.StatusAllOK
 	}
-	glog.V(3).Infof("Ensuring finalizers exist on %s %q", kind, key)
-	err = fedResource.EnsureFinalizers()
+	glog.V(3).Infof("Ensuring finalizer exists on %s %q", kind, key)
+	err = fedResource.EnsureFinalizer()
 	if err != nil {
-		runtime.HandleError(errors.Wrapf(err, "Failed to ensure finalizers for %s %q", kind, key))
+		fedResource.RecordError("EnsureFinalizerError", errors.Wrap(err, "Failed to ensure finalizer"))
 		return util.StatusError
 	}
-
-	return s.syncToClusters(fedResource)
-}
-
-// syncToClusters ensures that the state of the given object is synchronized to
-// member clusters.
-func (s *FederationSyncController) syncToClusters(fedResource FederatedResource) util.ReconciliationStatus {
-	kind := s.typeConfig.GetFederatedType().Kind
-	key := fedResource.FederatedName().String()
 
 	clusters, err := s.informer.GetReadyClusters()
 	if err != nil {
-		runtime.HandleError(errors.Wrap(err, "Failed to get cluster list"))
+		fedResource.RecordError("ClusterRetrievalError", errors.Wrap(err, "Failed to get cluster list"))
 		return util.StatusNotSynced
 	}
 
-	selectedClusters, unselectedClusters, err := fedResource.ComputePlacement(clusters)
+	return s.syncToClusters(fedResource, clusters)
+}
+
+// syncToClusters ensures that the state of the given object is
+// synchronized to the provided clusters.
+func (s *FederationSyncController) syncToClusters(fedResource FederatedResource, clusters []*fedv1a1.FederatedCluster) util.ReconciliationStatus {
+	selectedClusterNames, err := fedResource.ComputePlacement(clusters)
 	if err != nil {
-		runtime.HandleError(errors.Wrapf(err, "Failed to compute placement for %s %q", kind, key))
+		fedResource.RecordError("ComputePlacementError", errors.Wrap(err, "Failed to compute placement"))
 		return util.StatusError
 	}
 
-	glog.V(3).Infof("Syncing %s %q in underlying clusters, selected clusters are: %s, unselected clusters are: %s",
-		kind, key, selectedClusters, unselectedClusters)
+	kind := fedResource.TargetKind()
+	key := fedResource.TargetName().String()
+	glog.V(4).Infof("Syncing %s %q in underlying clusters, selected clusters are: %s", kind, key, selectedClusterNames)
 
-	operations, err := s.clusterOperations(selectedClusters, unselectedClusters, fedResource)
-	if err != nil {
-		s.eventRecorder.Eventf(fedResource.Object(), corev1.EventTypeWarning, "FedClusterOperationsError",
-			"Error obtaining sync operations for %s %q: %v", kind, key, err)
-		return util.StatusError
+	updater := fedResource.NewUpdater()
+
+	status := util.StatusAllOK
+	for _, cluster := range clusters {
+		clusterName := cluster.Name
+
+		rawClusterObj, _, err := s.informer.GetTargetStore().GetByKey(clusterName, key)
+		if err != nil {
+			fedResource.RecordError("TargetRetrievalError",
+				errors.Wrapf(err, "Failed to retrieve cluster object for cluster %q", clusterName))
+			// Ensure an error status is returned but continue
+			// processing updates for other clusters.
+			status = util.StatusError
+			continue
+		}
+
+		var clusterObj *unstructured.Unstructured
+		if rawClusterObj != nil {
+			clusterObj = rawClusterObj.(*unstructured.Unstructured)
+		}
+
+		// Resource should not exist in the named cluster
+		if !selectedClusterNames.Has(clusterName) {
+			if clusterObj != nil && !fedResource.SkipClusterDeletion(clusterObj) {
+				updater.Delete(clusterName)
+			}
+			continue
+		}
+
+		// Resource should appear in the named cluster
+
+		// TODO(marun) Consider waiting until the result of resource
+		// creation has reached the target store before attempting
+		// subsequent operations.  Otherwise the object won't be found
+		// but an add operation will fail with AlreadyExists.
+		if clusterObj == nil {
+			updater.Create(clusterName)
+		} else {
+			updater.Update(clusterName, clusterObj)
+		}
+	}
+	if updater.NoChanges() {
+		return status
 	}
 
-	if len(operations) == 0 {
-		return util.StatusAllOK
+	updatedVersionMap, ok := updater.Wait()
+	if !ok {
+		status = util.StatusError
 	}
-
-	// TODO(marun) raise the visibility of operationErrors to aid in debugging
-	versionMap, operationErrors := s.updater.Update(operations)
-
-	err = fedResource.UpdateVersions(selectedClusters, versionMap)
+	// Always attempt to update versions even if the updater reported errors.
+	err = fedResource.UpdateVersions(selectedClusterNames.List(), updatedVersionMap)
 	if err != nil {
-		runtime.HandleError(errors.Wrapf(err, "Failed to update version status for %s %q", kind, key))
+		fedResource.RecordError("VersionUpdateError", errors.Wrapf(err, "Failed to update version status"))
 		// Versioning of federated resources is an optimization to
 		// avoid unnecessary updates, and failure to record version
 		// information does not indicate a failure of propagation.
 	}
 
-	if len(operationErrors) > 0 {
-		runtime.HandleError(errors.Errorf("Failed to execute updates for %s %q: %v", kind,
-			key, operationErrors))
-		return util.StatusError
-	}
-
-	return util.StatusAllOK
-}
-
-// clusterOperations returns the list of operations needed to synchronize the
-// state of the given object to the provided clusters.
-func (s *FederationSyncController) clusterOperations(selectedClusters, unselectedClusters []string, fedResource FederatedResource) ([]util.FederatedOperation, error) {
-	// Cluster operations require the target kind (which differs from
-	// the federated kind) and target name (which may differ from the
-	// federated name).
-	kind := s.typeConfig.GetTarget().Kind
-	key := fedResource.TargetName().String()
-
-	operations := make([]util.FederatedOperation, 0)
-
-	versionMap, err := fedResource.GetVersions()
-	if err != nil {
-		return nil, errors.Wrapf(err, "Error retrieving version map for %s %q", kind, key)
-	}
-
-	targetKind := s.typeConfig.GetTarget().Kind
-
-	for _, clusterName := range selectedClusters {
-		// TODO(marun) Create the desired object only if needed
-		desiredObj, err := fedResource.ObjectForCluster(clusterName)
-		if err != nil {
-			return nil, err
-		}
-
-		// TODO(marun) Wait until result of add operation has reached
-		// the target store before attempting subsequent operations?
-		// Otherwise the object won't be found but an add operation
-		// will fail with AlreadyExists.
-		clusterObj, found, err := s.informer.GetTargetStore().GetByKey(clusterName, key)
-		if err != nil {
-			wrappedErr := errors.Wrapf(err, "Failed to get %s %q from cluster %q", kind, key, clusterName)
-			runtime.HandleError(wrappedErr)
-			return nil, wrappedErr
-		}
-
-		var operationType util.FederatedOperationType = ""
-
-		if found {
-			clusterObj := clusterObj.(*unstructured.Unstructured)
-
-			if fedResource.SkipClusterChange(clusterObj) {
-				continue
-			}
-
-			desiredObj, err = objectForUpdateOp(targetKind, desiredObj, clusterObj, fedResource.Object())
-			if err != nil {
-				wrappedErr := errors.Wrapf(err, "Failed to determine desired object %s %q for cluster %q", kind, key, clusterName)
-				runtime.HandleError(wrappedErr)
-				return nil, wrappedErr
-			}
-
-			version, ok := versionMap[clusterName]
-			if !ok || util.ObjectNeedsUpdate(desiredObj, clusterObj, version) {
-				operationType = util.OperationTypeUpdate
-			}
-		} else {
-			// A namespace in the host cluster will never need to be
-			// added since by definition it must already exist.
-
-			operationType = util.OperationTypeAdd
-		}
-
-		if len(operationType) > 0 {
-			operations = append(operations, util.FederatedOperation{
-				Type:        operationType,
-				Obj:         desiredObj,
-				ClusterName: clusterName,
-				Key:         key,
-			})
-		}
-	}
-
-	for _, clusterName := range unselectedClusters {
-		rawClusterObj, found, err := s.informer.GetTargetStore().GetByKey(clusterName, key)
-		if err != nil {
-			wrappedErr := errors.Wrapf(err, "Failed to get %s %q from cluster %q", kind, key, clusterName)
-			runtime.HandleError(wrappedErr)
-			return nil, wrappedErr
-		}
-		if found {
-			clusterObj := rawClusterObj.(pkgruntime.Object)
-			if fedResource.SkipClusterChange(clusterObj) {
-				continue
-			}
-			operations = append(operations, util.FederatedOperation{
-				Type:        util.OperationTypeDelete,
-				Obj:         clusterObj,
-				ClusterName: clusterName,
-				Key:         key,
-			})
-		}
-	}
-
-	return operations, nil
-}
-
-// TODO(marun) Support webhooks for custom update behavior
-func objectForUpdateOp(targetKind string, desiredObj, clusterObj, fedObj *unstructured.Unstructured) (*unstructured.Unstructured, error) {
-	// Pass the same ResourceVersion as in the cluster object for update operation, otherwise operation will fail.
-	desiredObj.SetResourceVersion(clusterObj.GetResourceVersion())
-
-	if targetKind == util.ServiceKind {
-		return serviceForUpdateOp(desiredObj, clusterObj)
-	}
-	if targetKind == util.ServiceAccountKind {
-		return serviceAccountForUpdateOp(desiredObj, clusterObj)
-	}
-	return retainReplicas(desiredObj, clusterObj, fedObj)
-}
-
-func serviceForUpdateOp(desiredObj, clusterObj *unstructured.Unstructured) (*unstructured.Unstructured, error) {
-	// ClusterIP and NodePort are allocated to Service by cluster, so retain the same if any while updating
-
-	// Retain clusterip
-	clusterIP, ok, err := unstructured.NestedString(clusterObj.Object, "spec", "clusterIP")
-	if err != nil {
-		return nil, errors.Wrap(err, "Error retrieving clusterIP from cluster service")
-	}
-	// !ok could indicate that a cluster ip was not assigned
-	if ok && clusterIP != "" {
-		err := unstructured.SetNestedField(desiredObj.Object, clusterIP, "spec", "clusterIP")
-		if err != nil {
-			return nil, errors.Wrap(err, "Error setting clusterIP for service")
-		}
-	}
-
-	// Retain nodeports
-	clusterPorts, ok, err := unstructured.NestedSlice(clusterObj.Object, "spec", "ports")
-	if err != nil {
-		return nil, errors.Wrap(err, "Error retrieving ports from cluster service")
-	}
-	if !ok {
-		return desiredObj, nil
-	}
-	var desiredPorts []interface{}
-	desiredPorts, ok, err = unstructured.NestedSlice(desiredObj.Object, "spec", "ports")
-	if err != nil {
-		return nil, errors.Wrap(err, "Error retrieving ports from service")
-	}
-	if !ok {
-		desiredPorts = []interface{}{}
-	}
-	for desiredIndex := range desiredPorts {
-		for clusterIndex := range clusterPorts {
-			fPort := desiredPorts[desiredIndex].(map[string]interface{})
-			cPort := clusterPorts[clusterIndex].(map[string]interface{})
-			if !(fPort["name"] == cPort["name"] && fPort["protocol"] == cPort["protocol"] && fPort["port"] == cPort["port"]) {
-				continue
-			}
-			nodePort, ok := cPort["nodePort"]
-			if ok {
-				fPort["nodePort"] = nodePort
-			}
-		}
-	}
-	err = unstructured.SetNestedSlice(desiredObj.Object, desiredPorts, "spec", "ports")
-	if err != nil {
-		return nil, errors.Wrap(err, "Error setting ports for service")
-	}
-
-	return desiredObj, nil
-}
-
-// serviceAccountForUpdateOp retains the 'secrets' field of a service account
-// if the desired representation does not include a value for the field.  This
-// ensures that the sync controller doesn't continually clear a generated
-// secret from a service account, prompting continual regeneration by the
-// service account controller in the member cluster.
-//
-// TODO(marun) Clearing a manually-set secrets field will require resetting
-// placement.  Is there a better way to do this?
-func serviceAccountForUpdateOp(desiredObj, clusterObj *unstructured.Unstructured) (*unstructured.Unstructured, error) {
-	// Check whether the secrets field is populated in the desired object.
-	desiredSecrets, ok, err := unstructured.NestedSlice(desiredObj.Object, util.SecretsField)
-	if err != nil {
-		return nil, errors.Wrap(err, "Error retrieving secrets from desired service account")
-	}
-	if ok && len(desiredSecrets) > 0 {
-		// Field is populated, so an update to the target resource does not
-		// risk triggering a race with the service account controller.
-		return desiredObj, nil
-	}
-
-	// Retrieve the secrets from the cluster object and retain them.
-	secrets, ok, err := unstructured.NestedSlice(clusterObj.Object, util.SecretsField)
-	if err != nil {
-		return nil, errors.Wrap(err, "Error retrieving secrets from service account")
-	}
-	if ok && len(secrets) > 0 {
-		err := unstructured.SetNestedField(desiredObj.Object, secrets, util.SecretsField)
-		if err != nil {
-			return nil, errors.Wrap(err, "Error setting secrets for service account")
-		}
-	}
-	return desiredObj, nil
-}
-
-func retainReplicas(desiredObj, clusterObj, fedObj *unstructured.Unstructured) (*unstructured.Unstructured, error) {
-	// Retain the replicas field if the federated object has been
-	// configured to do so.  If the replicas field is intended to be
-	// set by the in-cluster HPA controller, not retaining it will
-	// thrash the scheduler.
-	retainReplicas, ok, err := unstructured.NestedBool(fedObj.Object, util.SpecField, util.RetainReplicasField)
-	if err != nil {
-		return nil, err
-	}
-	if ok && retainReplicas {
-		replicas, ok, err := unstructured.NestedInt64(clusterObj.Object, util.SpecField, util.ReplicasField)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			err := unstructured.SetNestedField(desiredObj.Object, replicas, util.SpecField, util.ReplicasField)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	return desiredObj, nil
+	return status
 }

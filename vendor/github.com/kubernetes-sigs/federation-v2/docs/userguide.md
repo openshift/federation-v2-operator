@@ -5,17 +5,16 @@
 - [User Guide](#user-guide)
   - [Prerequisites](#prerequisites)
     - [Binaries](#binaries)
-      - [kubebuilder](#kubebuilder)
     - [Deployment Image](#deployment-image)
     - [Create Clusters](#create-clusters)
   - [Helm Chart Deployment](#helm-chart-deployment)
-  - [Automated Deployment](#automated-deployment)
   - [Operations](#operations)
     - [Join Clusters](#join-clusters)
     - [Check Status of Joined Clusters](#check-status-of-joined-clusters)
     - [Unjoin Clusters](#unjoin-clusters)
   - [Enabling federation of an API type](#enabling-federation-of-an-api-type)
   - [Disabling federation of an API type](#disabling-federation-of-an-api-type)
+  - [Deletion policy](#deletion-policy)
   - [Example](#example)
     - [Create the Test Namespace](#create-the-test-namespace)
     - [Create Test Resources](#create-test-resources)
@@ -28,14 +27,12 @@
         - [`spec.placement.clusterNames` is not provided, `spec.placement.clusterSelector` is provided and not empty](#specplacementclusternames-is-not-provided-specplacementclusterselector-is-provided-and-not-empty)
     - [Example Cleanup](#example-cleanup)
     - [Troubleshooting](#troubleshooting)
-  - [Cleanup](#cleanup)
-    - [Deployment Cleanup](#deployment-cleanup)
   - [Namespaced Federation](#namespaced-federation)
-    - [Automated Deployment](#automated-deployment-1)
+    - [Helm Configuration](#helm-configuration)
     - [Joining Clusters](#joining-clusters)
-    - [Deployment Cleanup](#deployment-cleanup-1)
   - [Local Value Retention](#local-value-retention)
-    - [Scalable Resources](#scalable-resources)
+    - [Scalable](#scalable)
+    - [ServiceAccount](#serviceaccount)
   - [Higher order behaviour](#higher-order-behaviour)
     - [Multi-Cluster Ingress DNS](#multi-cluster-ingress-dns)
     - [Multi-Cluster Service DNS](#multi-cluster-service-dns)
@@ -43,7 +40,7 @@
       - [Distribute total replicas evenly in all available clusters](#distribute-total-replicas-evenly-in-all-available-clusters)
       - [Distribute total replicas in weighted proportions](#distribute-total-replicas-in-weighted-proportions)
       - [Distribute replicas in weighted proportions, also enforcing replica limits per cluster](#distribute-replicas-in-weighted-proportions-also-enforcing-replica-limits-per-cluster)
-      - [Distribute replicas evenly in all clusters, however not more then 20 in C](#distribute-replicas-evenly-in-all-clusters-however-not-more-then-20-in-c)
+      - [Distribute replicas evenly in all clusters, however not more than 20 in C](#distribute-replicas-evenly-in-all-clusters-however-not-more-than-20-in-c)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -62,8 +59,8 @@ is a detailed list of binaries required.
 ### Binaries
 
 The federation deployment depends on `kubebuilder`, `etcd`, `kubectl`, and
-`kube-apiserver` >= v1.11 being installed in the path. The `kubebuilder`
-([v1.0.4](https://github.com/kubernetes-sigs/kubebuilder/releases/tag/v1.0.4)
+`kube-apiserver` >= v1.13 being installed in the path. The `kubebuilder`
+([v1.0.8](https://github.com/kubernetes-sigs/kubebuilder/releases/tag/v1.0.8)
 as of this writing) release packages all of these dependencies together.
 
 These binaries can be installed via the `download-binaries.sh` script, which
@@ -76,14 +73,6 @@ export PATH=$(pwd)/bin:${PATH}
 
 Or you can install them manually yourself using the guidelines provided below.
 
-#### kubebuilder
-
-This repo depends on
-[kubebuilder](https://github.com/kubernetes-sigs/kubebuilder)
-to generate code and build binaries. Download the [v1.0.4
-release](https://github.com/kubernetes-sigs/kubebuilder/releases/tag/v1.0.4)
-and install it in your `PATH`.
-
 ### Deployment Image
 
 If you follow this user guide without any changes you will be using the latest
@@ -94,7 +83,7 @@ custom image](development.md#test-your-changes).
 
 ### Create Clusters
 
-The federation v2 control plane can run on any v1.11 or greater Kubernetes clusters. The following is a list of
+The federation v2 control plane can run on any v1.13 or greater Kubernetes clusters. The following is a list of
 Kubernetes environments that have been tested and are supported by the Federation v2 community:
 
 - [kind](./environments/kind.md)
@@ -116,27 +105,7 @@ kubectl config use-context cluster1
 ## Helm Chart Deployment
 
 You can refer to [helm chart installation guide](https://github.com/kubernetes-sigs/federation-v2/blob/master/charts/federation-v2/README.md)
-to install federation-v2.
-
-## Automated Deployment
-
-If you would like to have the deployment of the federation-v2 control plane
-automated, then invoke the deployment script by running:
-
-```bash
-./scripts/deploy-federation-latest.sh cluster2
-```
-
-The above script joins the host cluster to the federation control plane it deploys, by default.
-The argument(s) used is/are the list of context names of the additional clusters that needs to be
-joined to this federation control plane. Clarifying, say the `host-cluster-context` used is `cluster1`,
-then on successful completion of the script used in example, both `cluster1` and `cluster2` will be
-joined to the deployed federation control plane.
-
-**NOTE:** You can list multiple joining cluster names in the above command.
-Also, please make sure the joining cluster name(s) provided matches the joining
-cluster context from your kubeconfig. This will already be the case if you used
-the minikube instructions above to create your clusters.
+to install and uninstall a federation-v2 control plane.
 
 ## Operations
 
@@ -235,6 +204,32 @@ kubefed2 disable <FederatedTypeConfig Name> --delete-from-api
 ```
 
 **WARNING: All custom resources for the type will be removed by this command.**
+
+## Deletion policy
+
+All federated resources reconciled by the sync controller have a
+finalizer (`federation.k8s.io/sync-controller`) added to their
+metadata. This finalizer will prevent deletion of a federated resource
+until the sync controller has a chance to perform pre-deletion
+cleanup.
+
+Pre-deletion cleanup of a federated resource includes removal of
+resources managed by the federated resource from member clusters. To
+ensure retention of managed resources, add `federation.k8s.io/orphan:
+true` as an annotation to the federated resource prior to deletion:
+
+```bash
+kubectl patch <federated type> <name> \
+    --type=merge -p '{"metadata": {"annotations": {"federation.k8s.io/orphan": "true"}}}'
+```
+
+In the event that a sync controller for a given federated type is not
+able to reconcile a federated resource slated for deletion - due to
+propagation being disabled for a given type or the federated control
+plane not running - a federated resource that still has the federation
+finalizer will linger rather than being garbage collected. If
+necessary, the federation finalizer can be manually removed to ensure
+garbage collection.
 
 ## Example
 
@@ -459,24 +454,6 @@ It may also be useful to inspect the federation controller log as follows:
 kubectl logs -f federation-controller-manager-0 -n federation-system
 ```
 
-## Cleanup
-
-### Deployment Cleanup
-
-Resources such as `namespaces` associated with a `FederatedNamespace` or `FederatedClusterRoles`
-should be deleted before cleaning up the deployment, otherwise, the process will fail.
-
-Run the following command to perform a cleanup of the cluster registry and
-federation deployments:
-
-```bash
-./scripts/delete-federation.sh
-```
-
-The above script unjoins the all of the clusters from the federation control plane it deploys,
-by default. On successful completion of the script used in example, both `cluster1` and
-`cluster2` will be unjoined from the deployed federation control plane.
-
 ## Namespaced Federation
 
 All prior instructions referred to the deployment and use of a
@@ -486,28 +463,12 @@ federation controllers will target resources in a single namespace on
 both host and member clusters. This may be desirable when
 experimenting with federation on a production cluster.
 
-### Automated Deployment
+### Helm Configuration
 
-The only supported method to deploy namespaced federation is via the
-deployment script configured with environment variables:
+To deploy a federation in a namespaced configuration, set
+`global.limitedScope` to `true` as per the Helm chart [install
+instructions](https://github.com/kubernetes-sigs/federation-v2/blob/master/charts/federation-v2/README.md#configuration).
 
-```bash
-NAMESPACED=y FEDERATION_NAMESPACE=<namespace> scripts/deploy-federation.sh <image name> <joining cluster list>
-```
-
-- `NAMESPACED` indicates that the control plane should target a
-  single namespace - the same namespace it is deployed to.
-- `FEDERATION_NAMESPACE`indicates the namespace to deploy the control
-  plane to. The control plane will only have permission to access this
-  on both the host and member clusters.
-
-It may be useful to supply `FEDERATION_NAMESPACE=test-namespace` to
-allow the examples to work unmodified. You can run following command
-to set up the test environment with `cluster1` and `cluster2`.
-
-```bash
-NAMESPACED=y FEDERATION_NAMESPACE=test-namespace scripts/deploy-federation.sh <containerregistry>/<username>/federation-v2:test cluster2
-```
 
 ### Joining Clusters
 
@@ -530,15 +491,6 @@ To join `mycluster` when `FEDERATION_NAMESPACE=test-namespace` was used for depl
     --limited-scope=true
 ```
 
-### Deployment Cleanup
-
-Cleanup similarly requires the use of the same environment variables
-employed by deployment:
-
-```bash
-NAMESPACED=y FEDERATION_NAMESPACE=<namespace> ./scripts/delete-federation.sh
-```
-
 ## Local Value Retention
 
 In most cases, the federation sync controller will overwrite any
@@ -547,7 +499,7 @@ exceptions appear in the following table.  Where retention is
 conditional, an explanation will be provided in a subsequent section.
 
 | Resource Type  | Fields                    | Retention   | Requirement                                                                  |
-|----------------|---------------------------|--------------------------------------------------------------------------------------------|
+|----------------|---------------------------|-------------|------------------------------------------------------------------------------|
 | All            | metadata.resourceVersion  | Always      | Updates require the most recent resourceVersion for concurrency control.     |
 | Scalable       | spec.replicas             | Conditional | The HPA controller may be managing the replica count of a scalable resource. |
 | Service        | spec.clusterIP,spec.ports | Always      | A controller may be managing these fields.                                   |
@@ -727,7 +679,7 @@ spec:
 
 A gets 4 and B get 5 as weighted distribution is capped by cluster A minReplicas=4.
 
-#### Distribute replicas evenly in all clusters, however not more then 20 in C
+#### Distribute replicas evenly in all clusters, however not more than 20 in C
 
 ```yaml
 apiVersion: scheduling.federation.k8s.io/v1alpha1

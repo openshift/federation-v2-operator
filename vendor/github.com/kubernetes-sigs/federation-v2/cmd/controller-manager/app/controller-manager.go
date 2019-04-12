@@ -22,13 +22,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/golang/glog"
-	"github.com/kubernetes-sigs/kubebuilder/pkg/install"
-	"github.com/kubernetes-sigs/kubebuilder/pkg/signals"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	extv1b1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/apiserver/pkg/util/logs"
@@ -36,14 +35,16 @@ import (
 
 	"github.com/kubernetes-sigs/federation-v2/cmd/controller-manager/app/leaderelection"
 	"github.com/kubernetes-sigs/federation-v2/cmd/controller-manager/app/options"
+	corev1a1 "github.com/kubernetes-sigs/federation-v2/pkg/apis/core/v1alpha1"
+	genericclient "github.com/kubernetes-sigs/federation-v2/pkg/client/generic"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/dnsendpoint"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/federatedcluster"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/federatedtypeconfig"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/ingressdns"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/schedulingmanager"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/servicedns"
+	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
 	"github.com/kubernetes-sigs/federation-v2/pkg/features"
-	"github.com/kubernetes-sigs/federation-v2/pkg/inject"
 	"github.com/kubernetes-sigs/federation-v2/pkg/version"
 )
 
@@ -91,11 +92,7 @@ func Run(opts *options.Options) error {
 	logs.InitLogs()
 	defer logs.FlushLogs()
 
-	if err := utilfeature.DefaultFeatureGate.SetFromMap(opts.FeatureGates); err != nil {
-		glog.Fatalf("Invalid Feature Gate: %v", err)
-	}
-
-	stopChan := signals.SetupSignalHandler()
+	stopChan := setupSignalHandler()
 
 	var err error
 	opts.Config.KubeConfig, err = clientcmd.BuildConfigFromFlags(masterURL, kubeconfig)
@@ -103,10 +100,10 @@ func Run(opts *options.Options) error {
 		panic(err)
 	}
 
-	if opts.InstallCRDs {
-		if err := install.NewInstaller(opts.Config.KubeConfig).Install(&InstallStrategy{crds: inject.Injector.CRDs}); err != nil {
-			glog.Fatalf("Could not create CRDs: %v", err)
-		}
+	setOptionsByFederationConfig(opts)
+
+	if err := utilfeature.DefaultFeatureGate.SetFromMap(opts.FeatureGates); err != nil {
+		glog.Fatalf("Invalid Feature Gate: %v", err)
 	}
 
 	if opts.LimitedScope {
@@ -145,8 +142,8 @@ func startControllers(opts *options.Options, stopChan <-chan struct{}) {
 	}
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.SchedulerPreferences) {
-		if _, err := schedulingmanager.StartSchedulerController(opts.Config, stopChan); err != nil {
-			glog.Fatalf("Error starting scheduler controller: %v", err)
+		if _, err := schedulingmanager.StartSchedulingManager(opts.Config, stopChan); err != nil {
+			glog.Fatalf("Error starting scheduling manager: %v", err)
 		}
 	}
 
@@ -177,13 +174,43 @@ func startControllers(opts *options.Options, stopChan <-chan struct{}) {
 	}
 }
 
-type InstallStrategy struct {
-	install.EmptyInstallStrategy
-	crds []*extv1b1.CustomResourceDefinition
-}
+func setOptionsByFederationConfig(opts *options.Options) {
+	client := genericclient.NewForConfigOrDieWithUserAgent(opts.Config.KubeConfig, "federationconfig")
 
-func (s *InstallStrategy) GetCRDs() []*extv1b1.CustomResourceDefinition {
-	return s.crds
+	name := util.FederationConfigName
+	namespace := opts.Config.FederationNamespace
+	fedConfig := &corev1a1.FederationConfig{}
+	err := client.Get(context.Background(), fedConfig, namespace, name)
+	if err != nil {
+		glog.V(1).Infof("Cannot retrieve FederationConfig %q in namespace %q: %v. Command line options are used.", name, namespace, err)
+		return
+	}
+
+	glog.Infof("Setting Options with FederationConfig %q in namespace %q", name, namespace)
+
+	spec := fedConfig.Spec
+	opts.LimitedScope = spec.LimitedScope
+	opts.ClusterMonitorPeriod = spec.ControllerDuration.ClusterMonitorPeriod.Duration
+
+	opts.Config.ClusterNamespace = spec.RegistryNamespace
+	opts.Config.ClusterAvailableDelay = spec.ControllerDuration.AvailableDelay.Duration
+	opts.Config.ClusterUnavailableDelay = spec.ControllerDuration.UnavailableDelay.Duration
+
+	opts.LeaderElection.ResourceLock = spec.LeaderElect.ResourceLock
+	opts.LeaderElection.RetryPeriod = spec.LeaderElect.RetryPeriod.Duration
+	opts.LeaderElection.RenewDeadline = spec.LeaderElect.RenewDeadline.Duration
+	opts.LeaderElection.LeaseDuration = spec.LeaderElect.LeaseDuration.Duration
+
+	var featureGates = make(map[string]bool)
+	for _, v := range fedConfig.Spec.FeatureGates {
+		featureGates[v.Name] = v.Enabled
+	}
+	if len(featureGates) == 0 {
+		return
+	}
+
+	opts.FeatureGates = featureGates
+	glog.V(1).Infof("\"feature-gates\" will be set to %v", featureGates)
 }
 
 // PrintFlags logs the flags in the flagset
@@ -191,4 +218,26 @@ func PrintFlags(flags *pflag.FlagSet) {
 	flags.VisitAll(func(flag *pflag.Flag) {
 		glog.V(1).Infof("FLAG: --%s=%q", flag.Name, flag.Value)
 	})
+}
+
+var onlyOneSignalHandler = make(chan struct{})
+var shutdownSignals = []os.Signal{os.Interrupt, syscall.SIGTERM}
+
+// setupSignalHandler registered for SIGTERM and SIGINT. A stop channel is returned
+// which is closed on one of these signals. If a second signal is caught, the program
+// is terminated with exit code 1.
+func setupSignalHandler() (stopCh <-chan struct{}) {
+	close(onlyOneSignalHandler) // panics when called twice
+
+	stop := make(chan struct{})
+	c := make(chan os.Signal, 2)
+	signal.Notify(c, shutdownSignals...)
+	go func() {
+		<-c
+		close(stop)
+		<-c
+		os.Exit(1) // second signal. Exit directly.
+	}()
+
+	return stop
 }

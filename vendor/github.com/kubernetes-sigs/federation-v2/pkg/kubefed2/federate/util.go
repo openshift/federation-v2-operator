@@ -32,6 +32,9 @@ func RemoveUnwantedFields(resource *unstructured.Unstructured) {
 	}
 	unstructured.RemoveNestedField(resource.Object, "metadata", "name")
 	unstructured.RemoveNestedField(resource.Object, "metadata", "namespace")
+	unstructured.RemoveNestedField(resource.Object, "apiVersion")
+	unstructured.RemoveNestedField(resource.Object, "kind")
+	unstructured.RemoveNestedField(resource.Object, "status")
 }
 
 func SetBasicMetaFields(resource *unstructured.Unstructured, apiResource metav1.APIResource, name, namespace, generateName string) {
