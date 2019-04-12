@@ -28,14 +28,13 @@ JOIN_CLUSTERS="${JOIN_CLUSTERS:-}"
 DOWNLOAD_BINARIES="${DOWNLOAD_BINARIES:-}"
 CONTAINER_REGISTRY_HOST="${CONTAINER_REGISTRY_HOST:-172.17.0.1:5000}"
 COMMON_TEST_CMD="go test -v"
-COMMON_TEST_ARGS="./test/e2e -args -ginkgo.v -single-call-timeout=1m -ginkgo.trace -ginkgo.randomizeAllSpecs"
-MANAGED_E2E_TEST_CMD="${COMMON_TEST_CMD} -race ${COMMON_TEST_ARGS}"
-# Specifying a kube config allows the tests to target deployed (unmanaged) fixture
-UNMANAGED_E2E_TEST_CMD="${COMMON_TEST_CMD} ${COMMON_TEST_ARGS} -kubeconfig=${HOME}/.kube/config"
+COMMON_TEST_ARGS="./test/e2e -args  -kubeconfig=${HOME}/.kube/config -ginkgo.v -single-call-timeout=1m -ginkgo.trace -ginkgo.randomizeAllSpecs"
+E2E_TEST_CMD="${COMMON_TEST_CMD} ${COMMON_TEST_ARGS}"
+IN_MEMORY_E2E_TEST_CMD="${COMMON_TEST_CMD} -race ${COMMON_TEST_ARGS} -in-memory-controllers=true"
 
 function build-binaries() {
   ${MAKE_CMD} hyperfed
-  ${MAKE_CMD} controller-native
+  ${MAKE_CMD} controller
   ${MAKE_CMD} kubefed2
 }
 
@@ -48,19 +47,7 @@ function download-dependencies() {
 }
 
 function run-unit-tests() {
-  # Ensure the test binaries are in the path.
-  export TEST_ASSET_PATH="${base_dir}/bin"
-  export TEST_ASSET_ETCD="${TEST_ASSET_PATH}/etcd"
-  export TEST_ASSET_KUBE_APISERVER="${TEST_ASSET_PATH}/kube-apiserver"
   ${MAKE_CMD} test
-}
-
-function run-e2e-tests-with-managed-fixture() {
-  # Ensure the test binaries are in the path.
-  export TEST_ASSET_PATH="${base_dir}/bin"
-  export TEST_ASSET_ETCD="${TEST_ASSET_PATH}/etcd"
-  export TEST_ASSET_KUBE_APISERVER="${TEST_ASSET_PATH}/kube-apiserver"
-  ${MANAGED_E2E_TEST_CMD}
 }
 
 function join-cluster-list() {
@@ -73,30 +60,25 @@ function join-cluster-list() {
   echo "${JOIN_CLUSTERS}"
 }
 
-function run-e2e-tests-with-unmanaged-fixture() {
-  ${UNMANAGED_E2E_TEST_CMD}
+function run-e2e-tests() {
+  ${E2E_TEST_CMD}
 }
 
-function run-namespaced-e2e-tests-with-unmanaged-fixture() {
-  local namespaced_e2e_test_cmd="${UNMANAGED_E2E_TEST_CMD} -federation-namespace=foo -registry-namespace=foo -limited-scope=true"
+function run-e2e-tests-with-in-memory-controllers() {
+  ${IN_MEMORY_E2E_TEST_CMD}
+}
+
+function run-namespaced-e2e-tests() {
+  local namespaced_e2e_test_cmd="${E2E_TEST_CMD} -federation-namespace=foo -registry-namespace=foo -limited-scope=true"
   # Run the placement test separately to avoid crud failures if
   # teardown doesn't remove namespace placement.
   ${namespaced_e2e_test_cmd} --ginkgo.skip=Placement
   ${namespaced_e2e_test_cmd} --ginkgo.focus=Placement
 }
 
-function check-kubebuilder-output() {
-  ./bin/kubebuilder generate
-  echo "Checking state of working tree after running 'kubebuilder generate'"
-  check-git-state
-}
-
-function check-install-yaml() {
-  PATH="${PATH}:${base_dir}/bin" FEDERATION_NAMESPACE=federation-system \
-    INSTALL_YAML=./hack/install-latest.yaml \
-    ./scripts/generate-install-yaml.sh \
-    ${CONTAINER_REGISTRY_HOST}/federation-v2:latest
-  echo "Checking state of working tree after generating install yaml"
+function check-make-generate-output() {
+  ${MAKE_CMD} generate
+  echo "Checking state of working tree after running 'make generate'"
   check-git-state
 }
 
@@ -115,11 +97,12 @@ function check-git-state() {
 
 # Make sure, we run in the root of the repo and
 # therefore run the tests on all packages
-base_dir="$( cd "$(dirname "$0")/.." && pwd )"
-cd "$base_dir" || {
-  echo "Cannot cd to '$base_dir'. Aborting." >&2
+cd "$ROOT_DIR" || {
+  echo "Cannot cd to '$ROOT_DIR'. Aborting." >&2
   exit 1
 }
+
+export PATH=${ROOT_DIR}/bin:${PATH}
 
 echo "Downloading test dependencies"
 download-dependencies
@@ -133,11 +116,8 @@ echo "Verifying Gofmt"
 echo "Checking that correct Error Package is used."
 ./hack/verify-errpkg.sh
 
-echo "Checking that 'kubebuilder generate' is up-to-date"
-check-kubebuilder-output
-
-echo "Checking that hack/install-latest.yaml is up-to-date"
-check-install-yaml
+echo "Checking that 'make generate' is up-to-date"
+check-make-generate-output
 
 echo "Checking that fixture is available for all federate directives"
 ./scripts/check-directive-fixtures.sh
@@ -148,13 +128,8 @@ build-binaries
 echo "Running unit tests"
 run-unit-tests
 
-echo "Running go e2e tests with managed fixture"
-run-e2e-tests-with-managed-fixture
-
 echo "Downloading e2e test dependencies"
 ./scripts/download-e2e-binaries.sh
-
-export PATH=${TEST_ASSET_PATH}:${PATH}
 
 CREATE_INSECURE_REGISTRY=y CONFIGURE_INSECURE_REGISTRY=y OVERWRITE_KUBECONFIG=y \
     ./scripts/create-clusters.sh
@@ -162,41 +137,26 @@ CREATE_INSECURE_REGISTRY=y CONFIGURE_INSECURE_REGISTRY=y OVERWRITE_KUBECONFIG=y 
 # Initialize list of clusters to join
 join-cluster-list > /dev/null
 
-echo "Deploying federation-v2"
+echo "Deploying cluster-scoped federation-v2"
 ./scripts/deploy-federation.sh ${CONTAINER_REGISTRY_HOST}/federation-v2:e2e $(join-cluster-list)
 
-echo "Checking sync up status of helm chart"
-BUILD_KUBEFED="false" PATH="${PATH}:${base_dir}/bin" ./scripts/sync-up-helm-chart.sh
+echo "Running e2e tests against cluster-scoped federation-v2"
+run-e2e-tests
 
-echo "Checking helm chart state of working tree"
-check-git-state
+echo "Scaling down cluster-scoped controller manager"
+kubectl scale deployments federation-controller-manager -n federation-system --replicas=0
 
-echo "Running go e2e tests with unmanaged fixture deployed by script"
-run-e2e-tests-with-unmanaged-fixture
+echo "Running e2e tests with race detector against cluster-scoped federation-v2 with in-memory controllers"
+run-e2e-tests-with-in-memory-controllers
 
-echo "Deleting federation-v2"
+echo "Deleting cluster-scoped federation-v2"
 ./scripts/delete-federation.sh
 
-echo "Deploying federation-v2 with helm chart"
-USE_CHART=true ./scripts/deploy-federation.sh ${CONTAINER_REGISTRY_HOST}/federation-v2:e2e $(join-cluster-list)
-
-echo "Running go e2e tests with unmanaged fixture deployed by helm chart"
-run-e2e-tests-with-unmanaged-fixture
-
-echo "Deleting federation-v2 with helm chart"
-USE_CHART=true ./scripts/delete-federation.sh
-
-echo "Deploying namespaced federation-v2"
+echo "Deploying namespace-scoped federation-v2"
 FEDERATION_NAMESPACE=foo NAMESPACED=y ./scripts/deploy-federation.sh ${CONTAINER_REGISTRY_HOST}/federation-v2:e2e $(join-cluster-list)
 
-echo "Running go e2e tests with unmanaged fixture deployed by script"
-run-namespaced-e2e-tests-with-unmanaged-fixture
+echo "Running go e2e tests with namespace-scoped federation-v2"
+run-namespaced-e2e-tests
 
-echo "Deleting namespaced federation-v2"
-FEDERATION_NAMESPACE=foo NAMESPACED=y ./scripts/delete-federation.sh
-
-echo "Deploying federation-v2 with helm chart"
-FEDERATION_NAMESPACE=foo NAMESPACED=y USE_CHART=true ./scripts/deploy-federation.sh ${CONTAINER_REGISTRY_HOST}/federation-v2:e2e $(join-cluster-list)
-
-echo "Running go e2e tests with unmanaged fixture deployed by helm chart"
-run-namespaced-e2e-tests-with-unmanaged-fixture
+echo "Deleting namespace-scoped federation-v2"
+FEDERATION_NAMESPACE=foo NAMESPACED=y DELETE_CLUSTER_RESOURCE=y ./scripts/delete-federation.sh

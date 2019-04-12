@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
@@ -39,14 +38,13 @@ import (
 	"github.com/kubernetes-sigs/federation-v2/pkg/apis/core/typeconfig"
 	fedv1a1 "github.com/kubernetes-sigs/federation-v2/pkg/apis/core/v1alpha1"
 	genericclient "github.com/kubernetes-sigs/federation-v2/pkg/client/generic"
-	ctlutil "github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
 	"github.com/kubernetes-sigs/federation-v2/pkg/kubefed2/options"
 	"github.com/kubernetes-sigs/federation-v2/pkg/kubefed2/util"
 )
 
 const (
-	defaultFederationGroup   = "types.federation.k8s.io"
-	defaultFederationVersion = "v1alpha1"
+	DefaultFederationGroup   = "types.federation.k8s.io"
+	DefaultFederationVersion = "v1alpha1"
 )
 
 var (
@@ -85,10 +83,10 @@ type enableTypeOptions struct {
 // argument.
 func (o *enableTypeOptions) Bind(flags *pflag.FlagSet) {
 	flags.StringVar(&o.targetVersion, "version", "", "Optional, the API version of the target type.")
-	flags.StringVar(&o.federationGroup, "federation-group", defaultFederationGroup, "The name of the API group to use for the generated federation type.")
-	flags.StringVar(&o.federationVersion, "federation-version", defaultFederationVersion, "The API version to use for the generated federation type.")
+	flags.StringVar(&o.federationGroup, "federation-group", DefaultFederationGroup, "The name of the API group to use for the generated federation type.")
+	flags.StringVar(&o.federationVersion, "federation-version", DefaultFederationVersion, "The API version to use for the generated federation type.")
 	flags.StringVarP(&o.output, "output", "o", "", "If provided, the resources that would be created in the API by the command are instead output to stdout in the provided format.  Valid values are ['yaml'].")
-	flags.StringVarP(&o.filename, "filename", "f", "", "If provided, the command will be configured from the provided yaml file.  Only --output wll be accepted from the command line")
+	flags.StringVarP(&o.filename, "filename", "f", "", "If provided, the command will be configured from the provided yaml file.  Only --output will be accepted from the command line")
 }
 
 // NewCmdTypeEnable defines the `enable` command that
@@ -104,12 +102,12 @@ func NewCmdTypeEnable(cmdOut io.Writer, config util.FedConfig) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			err := opts.Complete(args)
 			if err != nil {
-				glog.Fatalf("error: %v", err)
+				glog.Fatalf("Error: %v", err)
 			}
 
 			err = opts.Run(cmdOut, config)
 			if err != nil {
-				glog.Fatalf("error: %v", err)
+				glog.Fatalf("Error: %v", err)
 			}
 		},
 	}
@@ -199,9 +197,9 @@ func GetResources(config *rest.Config, enableTypeDirective *EnableTypeDirective)
 	if err != nil {
 		return nil, err
 	}
-	glog.V(2).Infof("Found resource %q", resourceKey(*apiResource))
+	glog.V(2).Infof("Found type %q", resourceKey(*apiResource))
 
-	typeConfig := typeConfigForTarget(*apiResource, enableTypeDirective)
+	typeConfig := GenerateTypeConfigForTarget(*apiResource, enableTypeDirective)
 
 	accessor, err := newSchemaAccessor(config, *apiResource)
 	if err != nil {
@@ -229,6 +227,17 @@ func CreateResources(cmdOut io.Writer, config *rest.Config, resources *typeResou
 		if cmdOut != nil {
 			cmdOut.Write([]byte(data))
 		}
+	}
+
+	hostClientset, err := util.HostClientset(config)
+	if err != nil {
+		return errors.Wrap(err, "Failed to create host clientset")
+	}
+	_, err = hostClientset.CoreV1().Namespaces().Get(namespace, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return errors.Wrapf(err, "Federation system namespace %q does not exist", namespace)
+	} else if err != nil {
+		return errors.Wrapf(err, "Error attempting to determine whether federation system namespace %q exists", namespace)
 	}
 
 	crdClient, err := apiextv1b1client.NewForConfig(config)
@@ -269,7 +278,7 @@ func CreateResources(cmdOut io.Writer, config *rest.Config, resources *typeResou
 	return nil
 }
 
-func typeConfigForTarget(apiResource metav1.APIResource, enableTypeDirective *EnableTypeDirective) typeconfig.Interface {
+func GenerateTypeConfigForTarget(apiResource metav1.APIResource, enableTypeDirective *EnableTypeDirective) typeconfig.Interface {
 	spec := enableTypeDirective.Spec
 	kind := apiResource.Kind
 	pluralName := apiResource.Name
@@ -306,15 +315,8 @@ func typeConfigForTarget(apiResource metav1.APIResource, enableTypeDirective *En
 
 func federatedTypeCRD(typeConfig typeconfig.Interface, accessor schemaAccessor, shortNames []string) *apiextv1b1.CustomResourceDefinition {
 	var templateSchema map[string]apiextv1b1.JSONSchemaProps
-	// Define the template field for everything but namespaces.
-	// A FederatedNamespace uses the containing namespace as the
-	// template.
-	if typeConfig.GetTarget().Kind != ctlutil.NamespaceKind {
-		templateSchema = accessor.templateSchema()
-	}
-
+	templateSchema = accessor.templateSchema()
 	schema := federatedTypeValidationSchema(templateSchema)
-
 	return CrdForAPIResource(typeConfig.GetFederatedType(), schema, shortNames)
 }
 
@@ -323,7 +325,7 @@ func writeObjectsToYAML(objects []pkgruntime.Object, w io.Writer) error {
 		w.Write([]byte("---\n"))
 		err := writeObjectToYAML(obj, w)
 		if err != nil {
-			return errors.Wrap(err, "Error encoding resource to yaml")
+			return errors.Wrap(err, "Error encoding object to yaml")
 		}
 	}
 	return nil
@@ -335,25 +337,7 @@ func writeObjectToYAML(obj pkgruntime.Object, w io.Writer) error {
 		return err
 	}
 
-	// Convert to unstructured to filter status out of the output.  If
-	// status is included in the yaml, attempting to create it in a
-	// kube API will cause an error.
 	unstructuredObj := &unstructured.Unstructured{}
 	unstructured.UnstructuredJSONScheme.Decode(json, nil, unstructuredObj)
-	delete(unstructuredObj.Object, "status")
-	// Also remove unnecessary field
-	metadataMap := unstructuredObj.Object["metadata"].(map[string]interface{})
-	delete(metadataMap, "creationTimestamp")
-
-	updatedJSON, err := unstructuredObj.MarshalJSON()
-	if err != nil {
-		return err
-	}
-
-	data, err := yaml.JSONToYAML(updatedJSON)
-	if err != nil {
-		return err
-	}
-	_, err = w.Write(data)
-	return err
+	return util.WriteUnstructuredToYaml(unstructuredObj, w)
 }

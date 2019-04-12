@@ -14,7 +14,7 @@
 # PACKAGE is the specific OLM package being deployed - federation or cluster-federation
 PACKAGE=${PACKAGE:-"federation"}
 # VERSION is the version of PACKAGE you want to populate in a community-operators fork
-VERSION=${VERSION:-"0.0.7"}
+VERSION=${VERSION:-"0.0.8"}
 # SOURCE is which source manifest you want to move - upstream-manifests or manifests
 SOURCE=${SOURCE:-"upstream-manifests"}
 # AREA is the place you want the manifests to go within community-operators,
