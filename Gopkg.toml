@@ -35,31 +35,31 @@
 
 [[constraint]]
   name = "github.com/kubernetes-sigs/federation-v2"
-  version="v0.0.7"
+  version="v0.0.8"
 
 [[override]]
   name="k8s.io/apimachinery"
-  version="kubernetes-1.12.4"
+  version="kubernetes-1.13.1"
 
 [[override]]
   name="k8s.io/client-go"
-  version="kubernetes-1.12.4"
+  version="kubernetes-1.13.1"
 
 [[override]]
   name="k8s.io/api"
-  version="kubernetes-1.12.4"
+  version="kubernetes-1.13.1"
 
 [[override]]
   name="k8s.io/apiserver"
-  version="kubernetes-1.12.4"
+  version="kubernetes-1.13.1"
 
 [[override]]
   name="k8s.io/kube-aggregator"
-  version="kubernetes-1.12.4"
+  version="kubernetes-1.13.1"
 
 [[override]]
   name="k8s.io/apiextensions-apiserver"
-  version="kubernetes-1.12.4"
+  version="kubernetes-1.13.1"
 
 [[override]]
   name="sigs.k8s.io/controller-runtime"
