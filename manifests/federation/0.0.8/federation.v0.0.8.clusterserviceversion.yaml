@@ -403,7 +403,12 @@ spec:
         displayName: Federated service status
         kind: FederatedServiceStatus
         name: federatedservicestatuses.core.federation.k8s.io
-        version: v1alpha1        
+        version: v1alpha1
+      - description: Represents a configuration of a Federation controller
+        displayName: FederationConfig
+        kind: FederationConfig
+        name: federationconfigs.core.federation.k8s.io
+        version: v1alpha1
       - description: Represents information about the version of a federated resource
         displayName: PropagatedVersion Resource
         kind: PropagatedVersion
