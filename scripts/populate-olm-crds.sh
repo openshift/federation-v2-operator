@@ -16,7 +16,8 @@
 FEDERATION_CHART_DIR=vendor/github.com/kubernetes-sigs/federation-v2/charts/federation-v2/
 PACKAGE=${PACKAGE:-"federation"}
 VERSION=${VERSION:-"0.0.8"}
-MANIFESTS_DIR=manifests/${PACKAGE}/${VERSION}
+FLAVOR=${FLAVOR:-"manifests"}
+MANIFESTS_DIR=${FLAVOR}/${PACKAGE}/${VERSION}
 
 echo "Populating OLM manifests for package ${PACKAGE} version ${VERSION}"
 
