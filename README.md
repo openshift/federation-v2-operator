@@ -9,6 +9,26 @@ This repository also contains exploratory work to deploy Federation-v2 as an
 [operator](https://coreos.com/operators) using
 [OLM](https://github.com/operator-framework/operator-lifecycle-manager).
 
+### Relationship between this repository and OperatorHub
+
+This repository is the canonical store for manifests that appear on
+[operatorhub.io](https://operatorhub.io) and the in-cluster OperatorHub in
+OpenShift 4. In turn, the different OperatorHub locations are all populated from
+the
+[community-operators](https://github.com/operator-framework/community-operators)
+repository. Here's an example of how a change makes its way into this repository
+and then into OperatorHub:
+
+1. Changes are made via a pull request to this repository and merged
+2. Someone uses the `scripts/populate-community-operators.sh` script to update
+   their local fork of the `community-operators` repo with the latest manifests
+   in the `community-operators` and `upstream-community-operators` directories
+3. The same person makes a pull request to the `community-operators` repository
+   with the latest version of the manifests
+4. Once the pull request to `community-operators` is merged:
+    1. The OperatorHub team manually updates [operatorhub.io](https://operatorhub.io)
+    2. OpenShift 4.x clusters pick up the change automatically within 1 hour
+
 ### Layout of this repository
 
 - The `stub.go` and `stub_test.go` files are intentionally-non-compileable stub
@@ -19,14 +39,19 @@ This repository also contains exploratory work to deploy Federation-v2 as an
 - The `Dockerfile` in the root directory is used to build enterprise images and
   performs binary builds only
 - The `manifests/` directory contains manifests to configure OLM to deploy
-  federation-v2 _built from the code vendored into this repository_
-- The `upstream-manifests/` directory contains manifests to configure OLM to deploy
-  federation-v2 _using the [upstream images](https://quay.io/repository/kubernetes-multicluster/federation-v2?tab=tags)_
+  federation-v2 _built from the code vendored into this repository_; this
+  directory is currently **unused** and represents preliminary work on a
+  **future supported enterprise operator**.
+- The `upstream-manifests/` directory contains manifests to configure OLM to
+  deploy federation-v2 _using the [upstream images](https://quay.io/repository/kubernetes-multicluster/federation-v2?tab=tags);
+  this is the directory that populates manifests in
+  [OperatorHub](https://operatorhub.io)
 - The `olm-testing/` directory contains a `Dockerfile` for building an operator
   registry that hosts the OLM manifests
-- The `scripts/` directory holds scripts to populate `manifests`, the
-  [community-operators repo](https://github.com/operator-framework/community-operators),
-  push operator registries, etc.
+- The `scripts/` directory holds scripts to populate `manifests` and
+  `upstream-manifests`, the
+  [community-operators repo](https://github.com/operator-framework/community-operators), push
+  operator registries, etc.
 
 ### Continuous Integration
 
@@ -48,7 +73,7 @@ You must have:
 - Your own quay.io account and the following image repositories under that account:
   - `origin-federation-controller`
   - `federation-operator-registry`
-- The `oc` binary in your `PATH`
+- The `kubectl` binary in your `PATH`
 
 #### Build the container image
 
