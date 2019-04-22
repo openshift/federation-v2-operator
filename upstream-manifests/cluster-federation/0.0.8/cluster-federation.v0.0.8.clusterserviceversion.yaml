@@ -147,7 +147,6 @@ spec:
                   args:
                     - --federation-namespace=$(FEDERATION_NAMESPACE)
                     - --registry-namespace=$(CLUSTER_REGISTRY_NAMESPACE)
-                    - --install-crds=false
                     - -v=5
                     - --logtostderr
                   imagePullPolicy: Always
