@@ -2,8 +2,8 @@ FROM alpine as munger
 
 ARG new_image_name
 COPY upstream-manifests manifests
-RUN sed "s,quay.io/kubernetes-multicluster/federation-v2:v0.0.8,$new_image_name," -i manifests/federation/0.0.8/federation.v0.0.8.clusterserviceversion.yaml
-RUN sed "s,quay.io/kubernetes-multicluster/federation-v2:v0.0.8,$new_image_name," -i manifests/cluster-federation/0.0.8/cluster-federation.v0.0.8.clusterserviceversion.yaml
+RUN sed "s,quay.io/kubernetes-multicluster/federation-v2:v0.0.9,$new_image_name," -i manifests/federation/0.0.9/federation.v0.0.9.clusterserviceversion.yaml
+RUN sed "s,quay.io/kubernetes-multicluster/federation-v2:v0.0.9,$new_image_name," -i manifests/cluster-federation/0.0.9/cluster-federation.v0.0.9.clusterserviceversion.yaml
 
 FROM quay.io/openshift/origin-operator-registry:latest
 

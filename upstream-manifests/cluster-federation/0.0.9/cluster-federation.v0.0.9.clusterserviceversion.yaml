@@ -3,14 +3,14 @@
 apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
-  name: cluster-federation.v0.0.8
+  name: cluster-federation.v0.0.9
   namespace: placeholder
   annotations:
     capabilities: Basic Install
     categories: "OpenShift Optional, Integration & Delivery"
     description: Cluster-scoped Federation
     certified: "false"
-    containerImage: "quay.io/kubernetes-multicluster/federation-v2:v0.0.8"
+    containerImage: "quay.io/kubernetes-multicluster/federation-v2:v0.0.9"
     createdAt: "2019-01-01T00:00:00Z"
 spec:
   displayName: Cluster Federation
@@ -46,13 +46,13 @@ spec:
     Finally, [register the other clusters](https://github.com/kubernetes-sigs/federation-v2/blob/master/docs/userguide.md#join-clusters) that will be federated to.
     See the [full user guide](https://github.com/kubernetes-sigs/federation-v2/blob/master/docs/userguide.md) for other capabilities of Federation.
   keywords: ['kubernetes', 'federation', 'hybrid', 'hybrid cloud', 'multi-cluster', 'cluster']
-  version: 0.0.8
+  version: 0.0.9
   maturity: alpha
   provider:
     name: Red Hat
   labels:
     alm-owner-federation: cluster-federation
-    alm-status-descriptors: cluster-federation.v0.0.8
+    alm-status-descriptors: cluster-federation.v0.0.9
   installModes:
   - type: OwnNamespace
     supported: true
@@ -134,7 +134,7 @@ spec:
             spec:
               containers:
                 - name: controller-manager
-                  image: quay.io/kubernetes-multicluster/federation-v2:v0.0.8
+                  image: quay.io/kubernetes-multicluster/federation-v2:v0.0.9
                   resources:
                     limits:
                       cpu: 100m

@@ -27,7 +27,7 @@ RUN rm -rf vendor/github.com/kubernetes-sigs/federation-v2
 
 # HACK: DOCKER_BUILD is set here to workaround the use of the docker command in the federation-v2 Makefile
 # HACK: GIT_VERSION is set explicitly due to an issue with how the .git directory is copied in
-RUN DOCKER_BUILD="/bin/sh -c " GIT_VERSION="0.0.8" make hyperfed
+RUN DOCKER_BUILD="/bin/sh -c " GIT_VERSION="0.0.9" make hyperfed
 
 # build stage 2: copy in binaries, add OLM manifest, labels, etc.
 FROM openshift/origin-base
