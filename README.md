@@ -38,10 +38,6 @@ and then into OperatorHub:
   dependencies
 - The `Dockerfile` in the root directory is used to build enterprise images and
   performs binary builds only
-- The `manifests/` directory contains manifests to configure OLM to deploy
-  federation-v2 _built from the code vendored into this repository_; this
-  directory is currently **unused** and represents preliminary work on a
-  **future supported enterprise operator**.
 - The `upstream-manifests/` directory contains manifests to configure OLM to
   deploy federation-v2 _using the [upstream images](https://quay.io/repository/kubernetes-multicluster/federation-v2?tab=tags);
   this is the directory that populates manifests in
