@@ -18,11 +18,7 @@ if [[ -n "${IMAGE}" ]]; then
   new_image_name=$IMAGE
 fi
 
-UPSTREAM=${UPSTREAM:-}
-dockerfile=olm-testing/Dockerfile
-if [[ -n "$UPSTREAM" ]]; then
-  dockerfile=olm-testing/Dockerfile.upstream
-fi
+dockerfile=olm-testing/Dockerfile.upstream
 
 tag="quay.io/$REGISTRY/federation-operator-registry:v4.0.0"
 echo "Building operator registry with tag $tag"
