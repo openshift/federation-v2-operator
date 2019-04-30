@@ -3,7 +3,6 @@
 # Declare variables to be passed into your templates.
 
 ## Configuration values for federation v2 controllermanager deployment.
-## TODO(gyliu513): Add more parameters here like `feature-gates` etc.
 ##
 controllermanager:
   enabled: true
@@ -11,7 +10,7 @@ controllermanager:
   repository: quay.io/kubernetes-multicluster
   image: federation-v2
   tag: canary
-  pullPolicy: IfNotPresent
+  imagePullPolicy: IfNotPresent
   resources:
     limits:
       cpu: 100m
@@ -19,18 +18,28 @@ controllermanager:
     requests:
       cpu: 100m
       memory: 64Mi
-  ## Feature gates are a set of key=value pairs that describe alpha or
-  ## experimental features. An administrator can use the --feature-gates
-  ## command line flag on each component to turn a feature on or off.
-  ## Federation V2 now have the following default feature gates:
-  ## PushReconciler=true,SchedulerPreferences=true,CrossClusterServiceDiscovery=true,FederatedIngress=true
-  featureGates:
-  ## The namespace the federation control plane is deployed in. If unset,
-  ## will default to federation-system.
-  federationNamespace:
-  ## The cluster registry namespace. If unset, will default to kube-multicluster-public.
+  ## The cluster registry namespace.
+  ## If unset, will default to kube-multicluster-public for a cluster-scoped deployment,
+  ## and the federation namespace for namespace-scoped deployment.
   registryNamespace:
-  
+  clusterAvailableDelay:
+  clusterUnavailableDelay:
+  leaderElectLeaseDuration:
+  leaderElectRenewDeadline:
+  leaderElectRetryPeriod:
+  clusterHealthCheckPeriodSeconds:
+  clusterHealthCheckFailureThreshold:
+  clusterHealthCheckSuccessThreshold:
+  clusterHealthCheckTimeoutSeconds:
+  ## Supported options are `configmaps` and `endpoints`
+  leaderElectResourceLock:
+  ## Value of feature gates item should be either `true` or `false`
+  featureGates:
+    PushReconciler:
+    SchedulerPreferences:
+    CrossClusterServiceDiscovery:
+    FederatedIngress:
+
 
 ## Configuration values for federation v2 clusterregistry.
 ##
@@ -41,5 +50,5 @@ clusterregistry:
 ##
 global:
   ## Whether the federation namespace will be the only target for federation.
-  ## If unset, will default to false.
-  limitedScope:
+  ## If unset, will default to `Cluster`. Supported options are `Cluster` and `Namespaced`
+  scope: ""

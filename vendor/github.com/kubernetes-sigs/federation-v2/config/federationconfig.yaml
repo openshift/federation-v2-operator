@@ -1,0 +1,10 @@
+apiVersion: core.federation.k8s.io/v1alpha1
+kind: FederationConfig
+metadata:
+  name: federation-v2
+  namespace: federation-system
+spec:
+  leader-elect:
+    lease-duration: 1500ms
+    renew-deadline: 1000ms
+    retry-period: 500ms

@@ -52,9 +52,9 @@ type FederatedClusterStatus struct {
 	// Conditions is an array of current cluster conditions.
 	// +optional
 	Conditions []ClusterCondition `json:"conditions,omitempty"`
-	// Zone is the name of availability zone in which the nodes of the cluster exist, e.g. 'us-east1-a'.
+	// Zones are the names of availability zones in which the nodes of the cluster exist, e.g. 'us-east1-a'.
 	// +optional
-	Zone string `json:"zone,omitempty"`
+	Zones []string `json:"zones,omitempty"`
 	// Region is the name of the region in which all of the nodes in the cluster exist.  e.g. 'us-east1'.
 	// +optional
 	Region string `json:"region,omitempty"`
@@ -71,6 +71,7 @@ type FederatedClusterStatus struct {
 // +kubebuilder:resource:path=federatedclusters
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name=ready,type=string,JSONPath=.status.conditions[?(@.type=='Ready')].status
+// +kubebuilder:printcolumn:name=age,type=date,JSONPath=.metadata.creationTimestamp
 type FederatedCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

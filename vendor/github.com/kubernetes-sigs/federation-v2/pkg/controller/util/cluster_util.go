@@ -44,11 +44,16 @@ const (
 	KubeAPIQPS              = 20.0
 	KubeAPIBurst            = 30
 	KubeconfigSecretDataKey = "kubeconfig"
-	getSecretTimeout        = 1 * time.Minute
 
 	DefaultLeaderElectionLeaseDuration = 15 * time.Second
 	DefaultLeaderElectionRenewDeadline = 10 * time.Second
 	DefaultLeaderElectionRetryPeriod   = 5 * time.Second
+	DefaultLeaderElectionResourceLock  = "configmaps"
+
+	DefaultClusterHealthCheckPeriod           = 10
+	DefaultClusterHealthCheckFailureThreshold = 3
+	DefaultClusterHealthCheckSuccessThreshold = 1
+	DefaultClusterHealthCheckTimeout          = 3
 
 	FederationConfigName = "federation-v2"
 )

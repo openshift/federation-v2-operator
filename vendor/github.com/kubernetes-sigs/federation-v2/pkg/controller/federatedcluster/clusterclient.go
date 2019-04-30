@@ -28,6 +28,8 @@ import (
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	kubeclientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 )
@@ -43,7 +45,8 @@ const (
 // ClusterClient provides methods for determining the status and zones of a
 // particular FederatedCluster.
 type ClusterClient struct {
-	kubeClient *kubeclientset.Clientset
+	kubeClient  *kubeclientset.Clientset
+	clusterName string
 }
 
 // NewClusterClientSet returns a ClusterClient for the given FederatedCluster.
@@ -55,7 +58,7 @@ func NewClusterClientSet(c *fedv1a1.FederatedCluster, client generic.Client, fed
 	if err != nil {
 		return nil, err
 	}
-	var clusterClientSet = ClusterClient{}
+	var clusterClientSet = ClusterClient{clusterName: c.Name}
 	if clusterConfig != nil {
 		clusterClientSet.kubeClient = kubeclientset.NewForConfigOrDie((restclient.AddUserAgent(clusterConfig, UserAgentName)))
 		if clusterClientSet.kubeClient == nil {
@@ -85,7 +88,7 @@ func (self *ClusterClient) GetClusterHealthStatus() *fedv1a1.FederatedClusterSta
 		LastProbeTime:      currentTime,
 		LastTransitionTime: currentTime,
 	}
-	newNodeOfflineCondition := fedv1a1.ClusterCondition{
+	newClusterOfflineCondition := fedv1a1.ClusterCondition{
 		Type:               fedcommon.ClusterOffline,
 		Status:             corev1.ConditionTrue,
 		Reason:             "ClusterNotReachable",
@@ -93,7 +96,7 @@ func (self *ClusterClient) GetClusterHealthStatus() *fedv1a1.FederatedClusterSta
 		LastProbeTime:      currentTime,
 		LastTransitionTime: currentTime,
 	}
-	newNodeNotOfflineCondition := fedv1a1.ClusterCondition{
+	newClusterNotOfflineCondition := fedv1a1.ClusterCondition{
 		Type:               fedcommon.ClusterOffline,
 		Status:             corev1.ConditionFalse,
 		Reason:             "ClusterReachable",
@@ -103,10 +106,11 @@ func (self *ClusterClient) GetClusterHealthStatus() *fedv1a1.FederatedClusterSta
 	}
 	body, err := self.kubeClient.DiscoveryClient.RESTClient().Get().AbsPath("/healthz").Do().Raw()
 	if err != nil {
-		clusterStatus.Conditions = append(clusterStatus.Conditions, newNodeOfflineCondition)
+		runtime.HandleError(errors.Wrapf(err, "Failed to do cluster health check for cluster %q", self.clusterName))
+		clusterStatus.Conditions = append(clusterStatus.Conditions, newClusterOfflineCondition)
 	} else {
 		if !strings.EqualFold(string(body), "ok") {
-			clusterStatus.Conditions = append(clusterStatus.Conditions, newClusterNotReadyCondition, newNodeNotOfflineCondition)
+			clusterStatus.Conditions = append(clusterStatus.Conditions, newClusterNotReadyCondition, newClusterNotOfflineCondition)
 		} else {
 			clusterStatus.Conditions = append(clusterStatus.Conditions, newClusterReadyCondition)
 		}
@@ -116,48 +120,44 @@ func (self *ClusterClient) GetClusterHealthStatus() *fedv1a1.FederatedClusterSta
 }
 
 // GetClusterZones gets the kubernetes cluster zones and region by inspecting labels on nodes in the cluster.
-func (self *ClusterClient) GetClusterZones() (zone, region string, err error) {
+func (self *ClusterClient) GetClusterZones() ([]string, string, error) {
 	nodes, err := self.kubeClient.CoreV1().Nodes().List(metav1.ListOptions{})
 	if err != nil {
 		glog.Errorf("Failed to list nodes while getting zone names: %v", err)
-		return "", "", err
+		return nil, "", err
 	}
+
+	zones := sets.NewString()
+	region := ""
 	for i, node := range nodes.Items {
-		zone, err = getZoneNameForNode(node)
-		if err != nil {
-			return "", "", err
-		}
+		zone := getZoneNameForNode(node)
+		// region is same for all nodes in the cluster, so just pick the region from first node.
 		if i == 0 {
-			region, err = getRegionNameForNode(node)
-			if err != nil {
-				return "", "", err
-			}
+			region = getRegionNameForNode(node)
 		}
-		// TODO: Optimize this flow. All nodes will have the same zone label.
-		// So just considering first node for now.
-		break
+		if zone != "" && !zones.Has(zone) {
+			zones.Insert(zone)
+		}
 	}
-	return zone, region, nil
+	return zones.List(), region, nil
 }
 
 // Find the name of the zone in which a Node is running.
-func getZoneNameForNode(node corev1.Node) (string, error) {
+func getZoneNameForNode(node corev1.Node) string {
 	for key, value := range node.Labels {
 		if key == LabelZoneFailureDomain {
-			return value, nil
+			return value
 		}
 	}
-	return "", errors.Errorf("Zone name for node %s not found. No label with key %s",
-		node.Name, LabelZoneFailureDomain)
+	return ""
 }
 
 // Find the name of the region in which a Node is running.
-func getRegionNameForNode(node corev1.Node) (string, error) {
+func getRegionNameForNode(node corev1.Node) string {
 	for key, value := range node.Labels {
 		if key == LabelZoneRegion {
-			return value, nil
+			return value
 		}
 	}
-	return "", errors.Errorf("Region name for node %s not found. No label with key %s",
-		node.Name, LabelZoneRegion)
+	return ""
 }

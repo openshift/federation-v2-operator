@@ -60,11 +60,15 @@ var (
 
 	enable_example = `
 		# Enable federation of Deployments
-		kubefed2 enable deployments.apps --host-cluster-context=cluster1`
+		kubefed2 enable deployments.apps --host-cluster-context=cluster1
+
+		# Enable federation of Deployments identified by name specified in
+		# deployment.yaml
+		kubefed2 enable -f deployment.yaml`
 )
 
 type enableType struct {
-	options.SubcommandOptions
+	options.GlobalSubcommandOptions
 	enableTypeOptions
 }
 
@@ -95,7 +99,7 @@ func NewCmdTypeEnable(cmdOut io.Writer, config util.FedConfig) *cobra.Command {
 	opts := &enableType{}
 
 	cmd := &cobra.Command{
-		Use:     "enable NAME",
+		Use:     "enable (NAME | -f FILENAME)",
 		Short:   "Enables propagation of a Kubernetes API type",
 		Long:    enable_long,
 		Example: enable_example,
@@ -113,7 +117,7 @@ func NewCmdTypeEnable(cmdOut io.Writer, config util.FedConfig) *cobra.Command {
 	}
 
 	flags := cmd.Flags()
-	opts.CommonBind(flags)
+	opts.GlobalSubcommandBind(flags)
 	opts.Bind(flags)
 
 	return cmd
@@ -225,7 +229,9 @@ func GetResources(config *rest.Config, enableTypeDirective *EnableTypeDirective)
 func CreateResources(cmdOut io.Writer, config *rest.Config, resources *typeResources, namespace string) error {
 	write := func(data string) {
 		if cmdOut != nil {
-			cmdOut.Write([]byte(data))
+			if _, err := cmdOut.Write([]byte(data)); err != nil {
+				glog.Fatalf("Unexpected err: %v\n", err)
+			}
 		}
 	}
 
@@ -267,14 +273,30 @@ func CreateResources(cmdOut io.Writer, config *rest.Config, resources *typeResou
 	if err != nil {
 		return errors.Wrap(err, "Failed to get federation clientset")
 	}
+
 	concreteTypeConfig := resources.TypeConfig.(*fedv1a1.FederatedTypeConfig)
 	concreteTypeConfig.Namespace = namespace
-	err = client.Create(context.TODO(), concreteTypeConfig)
+	existingTypeConfig := &fedv1a1.FederatedTypeConfig{}
+	err = client.Get(context.TODO(), existingTypeConfig, namespace, concreteTypeConfig.Name)
+	createdOrUpdated := "created"
 	if err != nil {
-		return errors.Wrapf(err, "Error creating FederatedTypeConfig %q", concreteTypeConfig.Name)
+		if !apierrors.IsNotFound(err) {
+			return errors.Wrapf(err, "Error retrieving FederatedTypeConfig %q", concreteTypeConfig.Name)
+		}
+		err = client.Create(context.TODO(), concreteTypeConfig)
+		if err != nil {
+			return errors.Wrapf(err, "Error creating FederatedTypeConfig %q", concreteTypeConfig.Name)
+		}
+	} else {
+		existingTypeConfig.Spec = concreteTypeConfig.Spec
+		err = client.Update(context.TODO(), existingTypeConfig)
+		if err != nil {
+			return errors.Wrapf(err, "Error updating FederatedTypeConfig %q", concreteTypeConfig.Name)
+		}
+		createdOrUpdated = "updated"
 	}
-	write(fmt.Sprintf("federatedtypeconfig.core.federation.k8s.io/%s created in namespace %s\n", concreteTypeConfig.Name, namespace))
-
+	write(fmt.Sprintf("federatedtypeconfig.core.federation.k8s.io/%s %s in namespace %s\n",
+		concreteTypeConfig.Name, createdOrUpdated, namespace))
 	return nil
 }
 
@@ -314,17 +336,18 @@ func GenerateTypeConfigForTarget(apiResource metav1.APIResource, enableTypeDirec
 }
 
 func federatedTypeCRD(typeConfig typeconfig.Interface, accessor schemaAccessor, shortNames []string) *apiextv1b1.CustomResourceDefinition {
-	var templateSchema map[string]apiextv1b1.JSONSchemaProps
-	templateSchema = accessor.templateSchema()
+	templateSchema := accessor.templateSchema()
 	schema := federatedTypeValidationSchema(templateSchema)
 	return CrdForAPIResource(typeConfig.GetFederatedType(), schema, shortNames)
 }
 
 func writeObjectsToYAML(objects []pkgruntime.Object, w io.Writer) error {
 	for _, obj := range objects {
-		w.Write([]byte("---\n"))
-		err := writeObjectToYAML(obj, w)
-		if err != nil {
+		if _, err := w.Write([]byte("---\n")); err != nil {
+			return errors.Wrap(err, "Error encoding object to yaml")
+		}
+
+		if err := writeObjectToYAML(obj, w); err != nil {
 			return errors.Wrap(err, "Error encoding object to yaml")
 		}
 	}
@@ -338,6 +361,9 @@ func writeObjectToYAML(obj pkgruntime.Object, w io.Writer) error {
 	}
 
 	unstructuredObj := &unstructured.Unstructured{}
-	unstructured.UnstructuredJSONScheme.Decode(json, nil, unstructuredObj)
+	if _, _, err := unstructured.UnstructuredJSONScheme.Decode(json, nil, unstructuredObj); err != nil {
+		return err
+	}
+
 	return util.WriteUnstructuredToYaml(unstructuredObj, w)
 }

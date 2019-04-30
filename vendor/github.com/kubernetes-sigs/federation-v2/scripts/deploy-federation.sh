@@ -50,8 +50,10 @@ set -o pipefail
 source "$(dirname "${BASH_SOURCE}")/util.sh"
 
 function deploy-with-helm() {
-  # RBAC should be enabled to avoid CI fail because CI K8s uses RBAC for Tiller
-  cat <<EOF | kubectl apply -f -
+  # Don't install tiller if we already have a working install.
+  if ! helm version --server 2>/dev/null; then
+    # RBAC should be enabled to avoid CI fail because CI K8s uses RBAC for Tiller
+    cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -72,22 +74,41 @@ subjects:
     namespace: kube-system
 EOF
 
-  helm init --service-account tiller
-  util::wait-for-condition "Tiller is ready" "helm version --server &> /dev/null" 120
-
-  REPOSITORY=${IMAGE_NAME%/*}
-  IMAGE_TAG=${IMAGE_NAME##*/}
-  IMAGE=${IMAGE_TAG%:*}
-  TAG=${IMAGE_TAG#*:}
-
-  if [[ "${NAMESPACED}" ]]; then
-      helm install charts/federation-v2 --name federation-v2-${NS} --namespace ${NS} \
-          --set controllermanager.repository=${REPOSITORY} --set controllermanager.image=${IMAGE} --set controllermanager.tag=${TAG} \
-          --set global.limitedScope=true
-  else
-      helm install charts/federation-v2 --name federation-v2 --namespace ${NS} \
-          --set controllermanager.repository=${REPOSITORY} --set controllermanager.image=${IMAGE} --set controllermanager.tag=${TAG}
+    helm init --service-account tiller
+    util::wait-for-condition "Tiller to become ready" "helm version --server &> /dev/null" 120
   fi
+
+  local repository=${IMAGE_NAME%/*}
+  local image_tag=${IMAGE_NAME##*/}
+  local image=${image_tag%:*}
+  local tag=${image_tag#*:}
+
+  local cmd
+  if [[ "${NAMESPACED}" ]]; then
+    cmd="$(helm-deploy-cmd federation-v2-${NS} ${NS} ${repository} ${image} ${tag})"
+    cmd="${cmd} --set global.scope=Namespaced"
+  else
+    cmd="$(helm-deploy-cmd federation-v2 ${NS} ${repository} ${image} ${tag})"
+  fi
+
+  if [[ "${IMAGE_PULL_POLICY:-}" ]]; then
+    cmd="${cmd} --set controllermanager.imagePullPolicy=${IMAGE_PULL_POLICY}"
+  fi
+
+  ${cmd}
+}
+
+function helm-deploy-cmd {
+  # Required arguments
+  local name="${1}"
+  local ns="${2}"
+  local repo="${3}"
+  local image="${4}"
+  local tag="${5}"
+
+  echo "helm install charts/federation-v2 --name ${name} --namespace ${ns} \
+      --set controllermanager.repository=${repo} --set controllermanager.image=${image} \
+      --set controllermanager.tag=${tag}"
 }
 
 NS="${FEDERATION_NAMESPACE:-federation-system}"
@@ -103,9 +124,6 @@ else
 fi
 
 KF_NS_ARGS="--federation-namespace=${NS} "
-if [[ "${NAMESPACED}" ]]; then
-  KF_NS_ARGS+="--registry-namespace=${NS} --limited-scope=true"
-fi
 
 if [[ -z "${IMAGE_NAME}" ]]; then
   >&2 echo "Usage: $0 <image> [join-cluster]...
@@ -128,7 +146,8 @@ to ensure credentials are available for push:
 fi
 
 shift
-JOIN_CLUSTERS="${*}"
+# Allow for no specific JOIN_CLUSTERS: they probably want to kubefed2 themselves.
+JOIN_CLUSTERS="${*-}"
 
 # Use DOCKER_PUSH= ./scripts/deploy-federation.sh <image> to skip docker
 # push on container image when not using latest image.

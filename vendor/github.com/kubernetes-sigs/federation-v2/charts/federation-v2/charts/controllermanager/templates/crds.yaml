@@ -1,4 +1,4 @@
-{{ if (or (not .Values.global.limitedScope) (not (.Capabilities.APIVersions.Has "core.federation.k8s.io/v1alpha1"))) }}
+{{ if (or (or (not .Values.global.scope) (eq .Values.global.scope "Cluster")) (not (.Capabilities.APIVersions.Has "core.federation.k8s.io/v1alpha1"))) }}
 ---
 apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
@@ -78,6 +78,9 @@ spec:
   - JSONPath: .status.conditions[?(@.type=='Ready')].status
     name: ready
     type: string
+  - JSONPath: .metadata.creationTimestamp
+    name: age
+    type: date
   group: core.federation.k8s.io
   names:
     kind: FederatedCluster
@@ -154,10 +157,12 @@ spec:
               description: Region is the name of the region in which all of the nodes
                 in the cluster exist.  e.g. 'us-east1'.
               type: string
-            zone:
-              description: Zone is the name of availability zone in which the nodes
-                of the cluster exist, e.g. 'us-east1-a'.
-              type: string
+            zones:
+              description: Zones are the names of availability zones in which the
+                nodes of the cluster exist, e.g. 'us-east1-a'.
+              items:
+                type: string
+              type: array
           type: object
   version: v1alpha1
 status:
@@ -387,6 +392,12 @@ spec:
         metadata:
           type: object
         spec:
+          properties:
+            scope:
+              description: The scope of the federation control plane should be either
+                `Namespaced` or `Cluster`. `Namespaced` indicates that the federation
+                namespace will be the only target for federation.
+              type: string
           type: object
   version: v1alpha1
 status:
@@ -722,9 +733,11 @@ spec:
                   region:
                     description: Region to which the cluster belongs
                     type: string
-                  zone:
-                    description: Zone to which the cluster belongs
-                    type: string
+                  zones:
+                    description: Zones to which the cluster belongs
+                    items:
+                      type: string
+                    type: array
                 type: object
               type: array
             domain:

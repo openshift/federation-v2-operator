@@ -24,10 +24,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 
-	"github.com/kubernetes-sigs/federation-v2/pkg/apis/core/typeconfig"
-	fedv1a1 "github.com/kubernetes-sigs/federation-v2/pkg/apis/core/v1alpha1"
-	genericclient "github.com/kubernetes-sigs/federation-v2/pkg/client/generic"
-	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -37,6 +33,12 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
+
+	"github.com/kubernetes-sigs/federation-v2/pkg/apis/core/typeconfig"
+	fedv1a1 "github.com/kubernetes-sigs/federation-v2/pkg/apis/core/v1alpha1"
+	genericclient "github.com/kubernetes-sigs/federation-v2/pkg/client/generic"
+	"github.com/kubernetes-sigs/federation-v2/pkg/controller/sync/dispatch"
+	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
 )
 
 const (
@@ -307,7 +309,7 @@ func (s *FederationSyncController) syncToClusters(fedResource FederatedResource,
 	key := fedResource.TargetName().String()
 	glog.V(4).Infof("Syncing %s %q in underlying clusters, selected clusters are: %s", kind, key, selectedClusterNames)
 
-	updater := fedResource.NewUpdater()
+	dispatcher := dispatch.NewManagedDispatcher(s.informer.GetClientForCluster, fedResource)
 
 	status := util.StatusAllOK
 	for _, cluster := range clusters {
@@ -330,8 +332,15 @@ func (s *FederationSyncController) syncToClusters(fedResource FederatedResource,
 
 		// Resource should not exist in the named cluster
 		if !selectedClusterNames.Has(clusterName) {
-			if clusterObj != nil && !fedResource.SkipClusterDeletion(clusterObj) {
-				updater.Delete(clusterName)
+			if clusterObj == nil || clusterObj.GetDeletionTimestamp() != nil {
+				continue
+			}
+			if fedResource.IsNamespaceInHostCluster(clusterObj) {
+				// Host cluster namespace needs to have the managed
+				// label removed so it won't be cached anymore.
+				dispatcher.RemoveManagedLabel(clusterName, clusterObj)
+			} else {
+				dispatcher.Delete(clusterName)
 			}
 			continue
 		}
@@ -343,26 +352,27 @@ func (s *FederationSyncController) syncToClusters(fedResource FederatedResource,
 		// subsequent operations.  Otherwise the object won't be found
 		// but an add operation will fail with AlreadyExists.
 		if clusterObj == nil {
-			updater.Create(clusterName)
+			dispatcher.Create(clusterName)
 		} else {
-			updater.Update(clusterName, clusterObj)
+			dispatcher.Update(clusterName, clusterObj)
 		}
 	}
-	if updater.NoChanges() {
-		return status
+	ok, err := dispatcher.Wait()
+	if err != nil {
+		fedResource.RecordError("OperationTimeoutError", err)
+		status = util.StatusError
 	}
-
-	updatedVersionMap, ok := updater.Wait()
 	if !ok {
 		status = util.StatusError
 	}
+	updatedVersionMap := dispatcher.VersionMap()
 	// Always attempt to update versions even if the updater reported errors.
 	err = fedResource.UpdateVersions(selectedClusterNames.List(), updatedVersionMap)
 	if err != nil {
-		fedResource.RecordError("VersionUpdateError", errors.Wrapf(err, "Failed to update version status"))
 		// Versioning of federated resources is an optimization to
 		// avoid unnecessary updates, and failure to record version
 		// information does not indicate a failure of propagation.
+		runtime.HandleError(err)
 	}
 
 	return status

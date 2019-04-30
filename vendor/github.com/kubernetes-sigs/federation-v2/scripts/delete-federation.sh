@@ -61,9 +61,6 @@ else
 fi
 
 KF_NS_ARG="--federation-namespace=${NS} "
-if [[ "${NAMESPACED}" ]]; then
-  KF_NS_ARG+="--registry-namespace=${NS}"
-fi
 
 # Unjoin clusters by removing objects added by kubefed2.
 HOST_CLUSTER="$(kubectl config current-context)"
@@ -76,11 +73,6 @@ done
 delete-helm-deployment
 
 ${KCD} ns "${NS}"
-
-# Remove permissive rolebinding that allows federation controllers to run.
-if [[ ! "${NAMESPACED}" ]]; then
-  ${KCD} clusterrolebinding federation-admin
-fi
 
 # Wait for the namespaces to be removed
 function ns-deleted() {
