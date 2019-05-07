@@ -40,9 +40,9 @@ spec:
     This means that only objects that share the Namespace where your Federation
     instance is deployed can be federated. You must enable Federation support
     for Namespaces in this configuration before other types will work. Use
-    `kubefed2 enable namespaces`.
+    `kubefedctl enable namespaces`.
 
-    Next, use `kubefed2 enable <API type>` for the other objects you would like to federate.
+    Next, use `kubefedctl enable <API type>` for the other objects you would like to federate.
     Finally, [register the other clusters](https://github.com/kubernetes-sigs/federation-v2/blob/master/docs/userguide.md#join-clusters) that will be federated to.
     See the [full user guide](https://github.com/kubernetes-sigs/federation-v2/blob/master/docs/userguide.md) for other capabilities of Federation.
   keywords: ['kubernetes', 'federation', 'hybrid', 'hybrid cloud', 'multi-cluster', 'cluster']
