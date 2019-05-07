@@ -64,6 +64,9 @@ func NewServiceObject(name, namespace string) *apiv1.Service {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Labels: map[string]string{
+				util.ManagedByFederationLabelKey: util.ManagedByFederationLabelValue,
+			},
 		},
 		Spec: apiv1.ServiceSpec{
 			Type: apiv1.ServiceTypeLoadBalancer,
@@ -80,6 +83,9 @@ func NewEndpointObject(name, namespace string) *apiv1.Endpoints {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Labels: map[string]string{
+				util.ManagedByFederationLabelKey: util.ManagedByFederationLabelValue,
+			},
 		},
 		Subsets: []apiv1.EndpointSubset{{
 			Addresses: []apiv1.EndpointAddress{{IP: "1.2.3.4"}},
@@ -93,6 +99,9 @@ func NewIngressObject(name, namespace string) *extv1b1.Ingress {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Labels: map[string]string{
+				util.ManagedByFederationLabelKey: util.ManagedByFederationLabelValue,
+			},
 		},
 		Spec: extv1b1.IngressSpec{
 			Rules: []extv1b1.IngressRule{{
@@ -129,23 +138,6 @@ func WaitForObject(tl TestLogger, namespace, name string, objectGetter func(name
 	})
 	if err != nil {
 		tl.Fatalf("Timedout waiting for desired state, \ndesired:%#v\nactual :%#v", desired, actual)
-	}
-}
-
-// WaitForObjectDeletion waits for the object to be deleted.
-func WaitForObjectDeletion(tl TestLogger, namespace, name string, objectGetter func(namespace, name string) (pkgruntime.Object, error), interval, timeout time.Duration) {
-	err := wait.PollImmediate(interval, timeout, func() (bool, error) {
-		_, err := objectGetter(namespace, name)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				return true, nil
-			}
-			return false, err
-		}
-		return false, nil
-	})
-	if err != nil {
-		tl.Fatalf("Timedout waiting for object %q/%q to be deleted", namespace, name)
 	}
 }
 

@@ -83,6 +83,9 @@ type FederationView interface {
 	// GetReadyClusters returns all clusters for which the sub-informers are run.
 	GetReadyClusters() ([]*fedv1a1.FederatedCluster, error)
 
+	// GetClusters returns a list of all clusters.
+	GetClusters() ([]*fedv1a1.FederatedCluster, error)
+
 	// GetReadyCluster returns the cluster with the given name, if found.
 	GetReadyCluster(name string) (*fedv1a1.FederatedCluster, bool, error)
 
@@ -140,7 +143,7 @@ func NewFederatedInformer(
 	clusterLifecycle *ClusterLifecycleHandlerFuncs) (FederatedInformer, error) {
 
 	targetInformerFactory := func(cluster *fedv1a1.FederatedCluster, client ResourceClient) (cache.Store, cache.Controller) {
-		return NewResourceInformer(client, config.TargetNamespace, triggerFunc)
+		return NewManagedResourceInformer(client, config.TargetNamespace, triggerFunc)
 	}
 
 	federatedInformer := &federatedInformerImpl{
@@ -194,7 +197,7 @@ func NewFederatedInformer(
 				curCluster, ok := cur.(*fedv1a1.FederatedCluster)
 				if !ok {
 					glog.Errorf("Cluster %v/%v not added; incorrect type", curCluster.Namespace, curCluster.Name)
-				} else if IsClusterReady(curCluster) {
+				} else if IsClusterReady(&curCluster.Status) {
 					federatedInformer.addCluster(curCluster)
 					glog.Infof("Cluster %v/%v is ready", curCluster.Namespace, curCluster.Name)
 					if clusterLifecycle.ClusterAvailable != nil {
@@ -215,7 +218,7 @@ func NewFederatedInformer(
 					glog.Errorf("Internal error: Cluster %v not updated.  New cluster not of correct type.", cur)
 					return
 				}
-				if IsClusterReady(oldCluster) != IsClusterReady(curCluster) || !reflect.DeepEqual(oldCluster.Spec, curCluster.Spec) || !reflect.DeepEqual(oldCluster.ObjectMeta.Annotations, curCluster.ObjectMeta.Annotations) {
+				if IsClusterReady(&oldCluster.Status) != IsClusterReady(&curCluster.Status) || !reflect.DeepEqual(oldCluster.Spec, curCluster.Spec) || !reflect.DeepEqual(oldCluster.ObjectMeta.Annotations, curCluster.ObjectMeta.Annotations) {
 					var data []interface{}
 					if clusterLifecycle.ClusterUnavailable != nil {
 						data = getClusterData(oldCluster.Name)
@@ -225,14 +228,14 @@ func NewFederatedInformer(
 						clusterLifecycle.ClusterUnavailable(oldCluster, data)
 					}
 
-					if IsClusterReady(curCluster) {
+					if IsClusterReady(&curCluster.Status) {
 						federatedInformer.addCluster(curCluster)
 						if clusterLifecycle.ClusterAvailable != nil {
 							clusterLifecycle.ClusterAvailable(curCluster)
 						}
 					}
 				} else {
-					glog.V(4).Infof("Cluster %v not updated to %v as ready status and specs are identical", oldCluster, curCluster)
+					glog.V(7).Infof("Cluster %v not updated to %v as ready status and specs are identical", oldCluster, curCluster)
 				}
 			},
 		},
@@ -240,8 +243,8 @@ func NewFederatedInformer(
 	return federatedInformer, err
 }
 
-func IsClusterReady(cluster *fedv1a1.FederatedCluster) bool {
-	for _, condition := range cluster.Status.Conditions {
+func IsClusterReady(clusterStatus *fedv1a1.FederatedClusterStatus) bool {
+	for _, condition := range clusterStatus.Conditions {
 		if condition.Type == fedcommon.ClusterReady {
 			if condition.Status == apiv1.ConditionTrue {
 				return true
@@ -344,7 +347,7 @@ func (f *federatedInformerImpl) GetUnreadyClusters() ([]*fedv1a1.FederatedCluste
 	result := make([]*fedv1a1.FederatedCluster, 0, len(items))
 	for _, item := range items {
 		if cluster, ok := item.(*fedv1a1.FederatedCluster); ok {
-			if !IsClusterReady(cluster) {
+			if !IsClusterReady(&cluster.Status) {
 				result = append(result, cluster)
 			}
 		} else {
@@ -356,6 +359,16 @@ func (f *federatedInformerImpl) GetUnreadyClusters() ([]*fedv1a1.FederatedCluste
 
 // GetReadyClusters returns all clusters for which the sub-informers are run.
 func (f *federatedInformerImpl) GetReadyClusters() ([]*fedv1a1.FederatedCluster, error) {
+	return f.getClusters(true)
+}
+
+// GetClusters returns all clusters regardless of ready state.
+func (f *federatedInformerImpl) GetClusters() ([]*fedv1a1.FederatedCluster, error) {
+	return f.getClusters(false)
+}
+
+// GetReadyClusters returns only ready clusters if onlyReady is true and all clusters otherwise.
+func (f *federatedInformerImpl) getClusters(onlyReady bool) ([]*fedv1a1.FederatedCluster, error) {
 	f.Lock()
 	defer f.Unlock()
 
@@ -363,7 +376,7 @@ func (f *federatedInformerImpl) GetReadyClusters() ([]*fedv1a1.FederatedCluster,
 	result := make([]*fedv1a1.FederatedCluster, 0, len(items))
 	for _, item := range items {
 		if cluster, ok := item.(*fedv1a1.FederatedCluster); ok {
-			if IsClusterReady(cluster) {
+			if !onlyReady || IsClusterReady(&cluster.Status) {
 				result = append(result, cluster)
 			}
 		} else {
@@ -384,7 +397,7 @@ func (f *federatedInformerImpl) getReadyClusterUnlocked(name string) (*fedv1a1.F
 	key := fmt.Sprintf("%s/%s", f.fedNamespace, name)
 	if obj, exist, err := f.clusterInformer.store.GetByKey(key); exist && err == nil {
 		if cluster, ok := obj.(*fedv1a1.FederatedCluster); ok {
-			if IsClusterReady(cluster) {
+			if IsClusterReady(&cluster.Status) {
 				return cluster, true, nil
 			}
 			return nil, false, nil

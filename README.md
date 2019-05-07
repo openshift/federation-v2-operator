@@ -71,18 +71,6 @@ You must have:
   - `federation-operator-registry`
 - The `kubectl` binary in your `PATH`
 
-#### Build the container image
-
-Build and push the container image to your `origin-federation-controller` image
-repository using this command:
-
-For this step, use image tag `quay.io/<your quay account>/origin-federation-controller:v4.0.0`.
-
-```
-$ docker build . -t quay.io/<your quay account>/origin-federation-controller:v4.0.0
-$ docker push quay.io/<your quay account>/origin-federation-controller:v4.0.0
-```
-
 #### Create an operator registry
 
 Use the `scripts/push-operator-registry.sh` script to push an image containing

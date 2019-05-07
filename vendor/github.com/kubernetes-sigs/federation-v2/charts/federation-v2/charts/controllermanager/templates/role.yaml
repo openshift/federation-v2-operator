@@ -1,4 +1,4 @@
-{{- if .Values.global.limitedScope }}
+{{- if and .Values.global.scope (eq .Values.global.scope "Namespaced") }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -56,11 +56,34 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - configmaps
-  - secrets
   - events
   verbs:
   - get
   - create
   - update
+  - patch
 {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    api: federation
+    kubebuilder.k8s.io: 1.0.0
+  name: federation-config-role
+  namespace: {{ .Release.Namespace }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - create
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get

@@ -27,6 +27,7 @@ CONFIGURE_INSECURE_REGISTRY="${CONFIGURE_INSECURE_REGISTRY:-}"
 CONTAINER_REGISTRY_HOST="${CONTAINER_REGISTRY_HOST:-172.17.0.1:5000}"
 NUM_CLUSTERS="${NUM_CLUSTERS:-2}"
 OVERWRITE_KUBECONFIG="${OVERWRITE_KUBECONFIG:-}"
+KIND_TAG="${KIND_TAG:-}"
 docker_daemon_config="/etc/docker/daemon.json"
 kubeconfig="${HOME}/.kube/config"
 
@@ -38,12 +39,15 @@ function create-insecure-registry() {
 function configure-insecure-registry() {
   local err=
   if sudo test -f "${docker_daemon_config}"; then
-    echo <<EOF "Error: ${docker_daemon_config} exists and \
-CONFIGURE_INSECURE_REGISTRY=${CONFIGURE_INSECURE_REGISTRY}. This script needs \
-to add an 'insecure-registries' entry with host '${CONTAINER_REGISTRY_HOST}' to \
-${docker_daemon_config}. Please make the necessary changes or backup and try again."
+    if sudo grep -q "\"insecure-registries\": \[\"${CONTAINER_REGISTRY_HOST}\"\]" ${docker_daemon_config}; then
+      return 0
+    elif sudo grep -q "\"insecure-registries\": " ${docker_daemon_config}; then
+      echo <<EOF "Error: ${docker_daemon_config} exists and \
+is already configured with an 'insecure-registries' entry but not set to ${CONTAINER_REGISTRY_HOST}. \
+Please make sure it is removed and try again."
 EOF
-    err=true
+      err=true
+    fi
   elif pgrep -a dockerd | grep -q 'insecure-registry'; then
     echo <<EOF "Error: CONFIGURE_INSECURE_REGISTRY=${CONFIGURE_INSECURE_REGISTRY} \
 and about to write ${docker_daemon_config}, but dockerd is already configured with \
@@ -87,8 +91,12 @@ function reload-docker-daemon-cmd() {
 function create-clusters() {
   local num_clusters=${1}
 
+  local image_arg=""
+  if [[ "${KIND_TAG}" ]]; then
+    image_arg="--image=kindest/node:${KIND_TAG}"
+  fi
   for i in $(seq ${num_clusters}); do
-    kind create cluster --name "cluster${i}"
+    kind create cluster --name "cluster${i}" ${image_arg}
     # TODO(font): remove once all workarounds are addressed.
     fixup-cluster ${i}
     echo

@@ -1,0 +1,12 @@
+issues:
+  exclude-rules:
+    - path: pkg/kubefedctl/enable/enable.go
+      linters:
+        - unused
+        - structcheck
+    - path: pkg/kubefedctl/join.go
+      linters:
+        - structcheck
+    - path: pkg/kubefedctl/disable.go
+      linters:
+        - structcheck

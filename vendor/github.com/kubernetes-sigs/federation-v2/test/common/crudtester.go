@@ -19,6 +19,7 @@ package common
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -38,8 +39,7 @@ import (
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/sync"
 	versionmanager "github.com/kubernetes-sigs/federation-v2/pkg/controller/sync/version"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
-	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util/deletionhelper"
-	"github.com/kubernetes-sigs/federation-v2/pkg/kubefed2/federate"
+	"github.com/kubernetes-sigs/federation-v2/pkg/kubefedctl/federate"
 )
 
 // FederatedTypeCrudTester exercises Create/Read/Update/Delete operations for
@@ -172,7 +172,8 @@ func (c *FederatedTypeCrudTester) CheckUpdate(fedObject *unstructured.Unstructur
 
 	key := "metadata.labels"
 	value := map[string]interface{}{
-		"crudtester-operation": "update",
+		"crudtester-operation":           "update",
+		util.ManagedByFederationLabelKey: util.ManagedByFederationLabelValue,
 	}
 
 	c.tl.Logf("Updating %s %q", kind, qualifiedName)
@@ -193,7 +194,10 @@ func (c *FederatedTypeCrudTester) CheckUpdate(fedObject *unstructured.Unstructur
 			}
 			clusterOverrides[key] = value
 		}
-		util.SetOverrides(obj, overrides)
+
+		if err := util.SetOverrides(obj, overrides); err != nil {
+			c.tl.Fatalf("Unexpected error: %v", err)
+		}
 	})
 	if err != nil {
 		c.tl.Fatalf("Error updating %s %q: %v", kind, qualifiedName, err)
@@ -210,36 +214,12 @@ func (c *FederatedTypeCrudTester) CheckPlacementChange(fedObject *unstructured.U
 	kind := apiResource.Kind
 	qualifiedName := util.NewQualifiedName(fedObject)
 
-	clusterNames, err := util.GetClusterNames(fedObject)
-	if err != nil {
-		c.tl.Fatalf("Error retrieving cluster names: %v", err)
-	}
-
-	primaryClusterName := c.getPrimaryClusterName()
-
-	// Skip if we're a namespace, we only have 2 or fewer member
-	// clusters, and the host cluster is also a member cluster.
-	// Otherwise the remainder of this function will ensure that the
-	// namespace is removed from non-host member clusters such that a
-	// subsequent CheckDelete will always succeed even if the deletion
-	// helper is broken.
-	//
-	// TODO(marun) This leaves namespace placement changes untested in
-	// the default 2 cluster CI configuration.  The code path is
-	// common, but it may make sense to remove and then add back the
-	// removed cluster for namespaces.
-	clusterNamesSet := sets.NewString(clusterNames...)
-	if c.targetIsNamespace && clusterNamesSet.Len() <= 2 && clusterNamesSet.Has(primaryClusterName) {
-		c.tl.Logf("Skipping check for placement change for %s %q due to only one non-host cluster",
-			kind, qualifiedName)
-		return
-	}
-
 	// Any cluster can be removed for non-namespace targets.
-	clusterNameToRetain := ""
+	clusterNameToRemove := ""
 	if c.targetIsNamespace {
-		// The primary cluster should not be removed for namespace targets.
-		clusterNameToRetain = primaryClusterName
+		// The primary cluster should be removed for namespace targets.  This
+		// will ensure that unlabeling is validated.
+		clusterNameToRemove = c.getPrimaryClusterName()
 	}
 
 	c.tl.Logf("Updating %s %q", kind, qualifiedName)
@@ -248,7 +228,7 @@ func (c *FederatedTypeCrudTester) CheckPlacementChange(fedObject *unstructured.U
 		if err != nil {
 			c.tl.Fatalf("Error retrieving cluster names: %v", err)
 		}
-		updatedClusterNames := c.removeOneClusterName(clusterNames, clusterNameToRetain)
+		updatedClusterNames := c.removeOneClusterName(clusterNames, clusterNameToRemove)
 		if len(updatedClusterNames) != len(clusterNames)-1 {
 			// This test depends on a cluster name being removed from
 			// the placement resource to validate that the sync
@@ -278,7 +258,7 @@ func (c *FederatedTypeCrudTester) CheckDelete(fedObject *unstructured.Unstructur
 	client := c.resourceClient(apiResource)
 
 	if orphanDependents {
-		orphanKey := deletionhelper.OrphanManagedResources
+		orphanKey := sync.OrphanManagedResources
 		err := wait.PollImmediate(c.waitInterval, wait.ForeverTestTimeout, func() (bool, error) {
 			var err error
 			if fedObject == nil {
@@ -302,7 +282,7 @@ func (c *FederatedTypeCrudTester) CheckDelete(fedObject *unstructured.Unstructur
 			if err == nil {
 				return true, nil
 			}
-			c.tl.Logf("Error updating %s %q to include the %q annotation: %v", federatedKind, qualifiedName, orphanKey, err)
+			c.tl.Logf("Will retry updating %s %q to include the %q annotation after error: %v", federatedKind, qualifiedName, orphanKey, err)
 			// Clear fedObject to ensure its attempted retrieval in the next iteration
 			fedObject = nil
 			return false, nil
@@ -326,8 +306,8 @@ func (c *FederatedTypeCrudTester) CheckDelete(fedObject *unstructured.Unstructur
 		waitTimeout = c.clusterWaitTimeout
 	}
 
-	// Wait for deletion.  The federation resource will only be removed once orphan deletion has been
-	// completed or deemed unnecessary.
+	// Wait for deletion.  The federation resource will only be removed once managed resources have
+	// been deleted or orphaned.
 	err = wait.PollImmediate(c.waitInterval, waitTimeout, func() (bool, error) {
 		_, err := client.Resources(namespace).Get(name, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
@@ -347,23 +327,26 @@ func (c *FederatedTypeCrudTester) CheckDelete(fedObject *unstructured.Unstructur
 	targetKind := c.typeConfig.GetTarget().Kind
 
 	// TODO(marun) Consider using informer to detect expected deletion state.
-	var stateMsg string = "present"
+	var stateMsg string = "unlabeled"
 	if deletingInCluster {
 		stateMsg = "not present"
 	}
 	for clusterName, testCluster := range c.testClusters {
 		err = wait.PollImmediate(c.waitInterval, waitTimeout, func() (bool, error) {
-			_, err := testCluster.Client.Resources(namespace).Get(name, metav1.GetOptions{})
+			obj, err := testCluster.Client.Resources(namespace).Get(name, metav1.GetOptions{})
 			switch {
 			case !deletingInCluster && apierrors.IsNotFound(err):
 				return false, errors.Errorf("%s %q was unexpectedly deleted from cluster %q", targetKind, qualifiedName, clusterName)
 			case deletingInCluster && err == nil:
-				// The namespace in the host cluster should not be removed.
 				if c.targetIsNamespace && clusterName == c.getPrimaryClusterName() {
-					return true, nil
+					// A namespace in the host cluster should have the
+					// managed label removed instead of being deleted.
+					return !util.HasManagedLabel(obj), nil
 				}
-				// Continue checking for deletion
+				// Continue checking for deletion or label removal
 				return false, nil
+			case !deletingInCluster && err == nil:
+				return !util.HasManagedLabel(obj), nil
 			case err != nil && !apierrors.IsNotFound(err):
 				c.tl.Errorf("Error while checking whether %s %q is %s in cluster %q: %v", targetKind, qualifiedName, stateMsg, clusterName, err)
 				// This error may be recoverable
@@ -373,7 +356,7 @@ func (c *FederatedTypeCrudTester) CheckDelete(fedObject *unstructured.Unstructur
 			}
 		})
 		if err != nil {
-			c.tl.Fatalf("Failed to confirm whether %s %q is %s in cluster: %v", targetKind, qualifiedName, stateMsg, clusterName, err)
+			c.tl.Fatalf("Failed to confirm whether %s %q is %s in cluster %q: %v", targetKind, qualifiedName, stateMsg, clusterName, err)
 		}
 	}
 }
@@ -388,14 +371,6 @@ func (c *FederatedTypeCrudTester) CheckPropagation(fedObject *unstructured.Unstr
 		c.tl.Fatalf("Error retrieving cluster names for %s %q: %v", federatedKind, qualifiedName, err)
 	}
 	selectedClusters := sets.NewString(clusterNames...)
-
-	// If we are a namespace, there is only one cluster, and the cluster is the
-	// host cluster, then do not check for a propagated version as it will never
-	// be created.
-	if c.targetIsNamespace && len(clusterNames) == 1 &&
-		clusterNames[0] == c.getPrimaryClusterName() {
-		return
-	}
 
 	templateVersion, err := sync.GetTemplateHash(fedObject.Object)
 	if err != nil {
@@ -415,14 +390,9 @@ func (c *FederatedTypeCrudTester) CheckPropagation(fedObject *unstructured.Unstr
 	targetKind := c.typeConfig.GetTarget().Kind
 
 	// TODO(marun) run checks in parallel
+	primaryClusterName := c.getPrimaryClusterName()
 	for clusterName, testCluster := range c.testClusters {
 		objExpected := selectedClusters.Has(clusterName)
-
-		// The crudtester is not responsible for deleting the namespace in the
-		// primary cluster.
-		if !objExpected && c.targetIsNamespace && clusterName == c.getPrimaryClusterName() {
-			continue
-		}
 
 		operation := "to be deleted from"
 		if objExpected {
@@ -441,6 +411,8 @@ func (c *FederatedTypeCrudTester) CheckPropagation(fedObject *unstructured.Unstr
 			case err != nil:
 				c.tl.Fatalf("Failed to verify %s %q in cluster %q: %v", targetKind, qualifiedName, clusterName, err)
 			}
+		} else if c.targetIsNamespace && clusterName == primaryClusterName {
+			c.checkHostNamespaceUnlabeled(testCluster.Client, qualifiedName, targetKind, clusterName)
 		} else {
 			err := c.waitForResourceDeletion(testCluster.Client, qualifiedName, func() bool {
 				version, ok := c.expectedVersion(qualifiedName, templateVersion, overrideVersion, clusterName)
@@ -460,15 +432,42 @@ func (c *FederatedTypeCrudTester) CheckPropagation(fedObject *unstructured.Unstr
 	}
 }
 
-func (c *FederatedTypeCrudTester) waitForResource(client util.ResourceClient, qualifiedName util.QualifiedName, expectedOverrides util.ClusterOverridesMap, expectedVersion func() string) error {
+func (c *FederatedTypeCrudTester) checkHostNamespaceUnlabeled(client util.ResourceClient, qualifiedName util.QualifiedName, targetKind, clusterName string) {
+	// A namespace in the host cluster should end up unlabeled instead of
+	// deleted when it is not targeted by placement.
+
 	err := wait.PollImmediate(c.waitInterval, c.clusterWaitTimeout, func() (bool, error) {
-		expectedVersion := expectedVersion()
+		hostNamespace, err := client.Resources("").Get(qualifiedName.Name, metav1.GetOptions{})
+		if err != nil {
+			c.tl.Errorf("Error retrieving %s %q in host cluster %q: %v", targetKind, qualifiedName, clusterName, err)
+			return false, nil
+		}
+		// Validate that the namespace is without the managed label
+		return !util.HasManagedLabel(hostNamespace), nil
+	})
+	if err != nil {
+		c.tl.Fatalf("Timeout verifying removal of managed label from %s %q in host cluster %q: %v", targetKind, qualifiedName, clusterName, err)
+	}
+}
+
+func (c *FederatedTypeCrudTester) waitForResource(client util.ResourceClient, qualifiedName util.QualifiedName, expectedOverrides util.ClusterOverridesMap, expectedVersionFunc func() string) error {
+	err := wait.PollImmediate(c.waitInterval, c.clusterWaitTimeout, func() (bool, error) {
+		expectedVersion := expectedVersionFunc()
 		if len(expectedVersion) == 0 {
 			return false, nil
 		}
 
 		clusterObj, err := client.Resources(qualifiedName.Namespace).Get(qualifiedName.Name, metav1.GetOptions{})
 		if err == nil && util.ObjectVersion(clusterObj) == expectedVersion {
+			// Validate that the resource has been labeled properly,
+			// indicating creation or adoption by the sync controller.  This
+			// labeling also ensures that the federated informer will be able
+			// to cache the resource.
+			if !util.HasManagedLabel(clusterObj) {
+				c.tl.Errorf("Expected resource to be labeled with %q", fmt.Sprintf("%s: %s", util.ManagedByFederationLabelKey, util.ManagedByFederationLabelValue))
+				return false, nil
+			}
+
 			// Validate that the expected override was applied
 			if len(expectedOverrides) > 0 {
 				for path, expectedValue := range expectedOverrides {
@@ -480,10 +479,13 @@ func (c *FederatedTypeCrudTester) waitForResource(client util.ResourceClient, qu
 					if !ok {
 						c.tl.Fatalf("Missing overridden path %s", path)
 					}
-					// Lacking type information for the override
-					// field, use string conversion as a cheap way to
-					// determine equality.
-					if fmt.Sprintf("%v", expectedValue) != fmt.Sprintf("%v", value) {
+					// Because the result of deserializing an override field differs from the value
+					// retrieved by NestedFieldCopy, reflection is not able to accurately compare
+					// numeric types that should otherwise be equal. For example, an override value
+					// of 2 is deserialized as %!q(float64=2), but the same value retrieved by
+					// NestedFieldCopy would be '\x02'.  String conversion is a hacky way of working
+					// around this problem, with a fallback to reflection for non-numeric types.
+					if fmt.Sprintf("%v", expectedValue) != fmt.Sprintf("%v", value) && !reflect.DeepEqual(expectedValue, value) {
 						c.tl.Errorf("Expected field %s to be %q, got %q", path, expectedValue, value)
 						return false, nil
 					}
@@ -601,17 +603,18 @@ func (c *FederatedTypeCrudTester) getPrimaryClusterName() string {
 	return ""
 }
 
-func (c *FederatedTypeCrudTester) removeOneClusterName(clusterNames []string, clusterNameToRetain string) []string {
-	for i, name := range clusterNames {
-		if name == clusterNameToRetain {
-			continue
-		} else {
-			clusterNames = append(clusterNames[:i], clusterNames[i+1:]...)
-			break
-		}
+func (c *FederatedTypeCrudTester) removeOneClusterName(clusterNames []string, clusterNameToRemove string) []string {
+	if len(clusterNameToRemove) == 0 {
+		return clusterNames[:len(clusterNames)-1]
 	}
-
-	return clusterNames
+	newClusterNames := []string{}
+	for _, name := range clusterNames {
+		if name == clusterNameToRemove {
+			continue
+		}
+		newClusterNames = append(newClusterNames, name)
+	}
+	return newClusterNames
 }
 
 func (c *FederatedTypeCrudTester) versionForCluster(version *fedv1a1.PropagatedVersionStatus, clusterName string) string {
@@ -623,17 +626,8 @@ func (c *FederatedTypeCrudTester) versionForCluster(version *fedv1a1.PropagatedV
 	return ""
 }
 
-func (c *FederatedTypeCrudTester) getNamespace(namespace string) *unstructured.Unstructured {
-	client := c.resourceClient(c.typeConfig.GetTarget())
-	obj, err := client.Resources("").Get(namespace, metav1.GetOptions{})
-	if err != nil {
-		c.tl.Errorf("An unexpected error occurred while retrieving the namespace for a federated namespace: %v", err)
-	}
-	return obj
-}
-
 func (c *FederatedTypeCrudTester) CheckStatusCreated(qualifiedName util.QualifiedName) {
-	if c.typeConfig.GetEnableStatus() == false {
+	if !c.typeConfig.GetEnableStatus() {
 		return
 	}
 

@@ -31,8 +31,8 @@ import (
 	genericclient "github.com/kubernetes-sigs/federation-v2/pkg/client/generic"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/schedulingmanager"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
-	"github.com/kubernetes-sigs/federation-v2/pkg/kubefed2"
-	kfenable "github.com/kubernetes-sigs/federation-v2/pkg/kubefed2/enable"
+	"github.com/kubernetes-sigs/federation-v2/pkg/kubefedctl"
+	kfenable "github.com/kubernetes-sigs/federation-v2/pkg/kubefedctl/enable"
 	"github.com/kubernetes-sigs/federation-v2/pkg/schedulingtypes"
 	"github.com/kubernetes-sigs/federation-v2/test/common"
 	"github.com/kubernetes-sigs/federation-v2/test/e2e/framework"
@@ -99,6 +99,12 @@ var _ = Describe("Scheduling", func() {
 				if !framework.TestContext.RunControllers() {
 					framework.Skipf("The scheduling manager can only be tested when controllers are running in-process.")
 				}
+
+				// The deletion of FederatedTypeConfigs performed by this test
+				// requires the FederatedTypeConfig controller in order to
+				// remove its finalizer for proper deletion.
+				controllerFixture = framework.NewFederatedTypeConfigControllerFixture(tl, f.ControllerConfig())
+				f.RegisterFixture(controllerFixture)
 
 				// make sure scheduler/plugin initialization are done before our test
 				By("Waiting for scheduler/plugin controllers are initialized in scheduling manager")
@@ -389,7 +395,7 @@ func enableTypeConfigResource(name, namespace string, config *restclient.Config,
 
 func deleteTypeConfigResource(name, namespace string, config *restclient.Config, tl common.TestLogger) {
 	qualifiedName := util.QualifiedName{Namespace: namespace, Name: name}
-	err := kubefed2.DisableFederation(nil, config, qualifiedName, true, false)
+	err := kubefedctl.DisableFederation(nil, config, nil, qualifiedName, true, false, false)
 	if err != nil {
 		tl.Fatalf("Error disabling federation of target type %q: %v", qualifiedName, err)
 	}

@@ -33,32 +33,23 @@ import (
 
 	"github.com/kubernetes-sigs/federation-v2/pkg/apis/core/typeconfig"
 	fedv1a1 "github.com/kubernetes-sigs/federation-v2/pkg/apis/core/v1alpha1"
+	"github.com/kubernetes-sigs/federation-v2/pkg/controller/sync/dispatch"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/sync/version"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util"
-	"github.com/kubernetes-sigs/federation-v2/pkg/controller/util/deletionhelper"
 )
 
 // FederatedResource encapsulates the behavior of a logical federated
 // resource which may be implemented by one or more kubernetes
 // resources in the cluster hosting the federation control plane.
 type FederatedResource interface {
+	dispatch.FederatedResourceForDispatch
+
 	FederatedName() util.QualifiedName
 	FederatedKind() string
-	TargetName() util.QualifiedName
-	TargetKind() string
-	Object() *unstructured.Unstructured
-	VersionForCluster(clusterName string) (string, error)
 	UpdateVersions(selectedClusters []string, versionMap map[string]string) error
 	DeleteVersions()
 	ComputePlacement(clusters []*fedv1a1.FederatedCluster) (selectedClusters sets.String, err error)
-	SkipClusterDeletion(clusterObj pkgruntime.Object) bool
-	ObjectForCluster(clusterName string) (*unstructured.Unstructured, error)
-	MarkedForDeletion() bool
-	EnsureDeletion() error
-	EnsureFinalizer() error
-	RecordError(errorCode string, err error)
-	RecordEvent(reason, messageFmt string, args ...interface{})
-	NewUpdater() FederatedUpdater
+	IsNamespaceInHostCluster(clusterObj pkgruntime.Object) bool
 }
 
 type federatedResource struct {
@@ -72,13 +63,11 @@ type federatedResource struct {
 	federatedName     util.QualifiedName
 	federatedResource *unstructured.Unstructured
 	versionManager    *version.VersionManager
-	deletionHelper    *deletionhelper.DeletionHelper
 	overridesMap      util.OverridesMap
 	versionMap        map[string]string
 	namespace         *unstructured.Unstructured
 	fedNamespace      *unstructured.Unstructured
 	eventRecorder     record.EventRecorder
-	informer          util.FederatedInformer
 }
 
 func (r *federatedResource) FederatedName() util.QualifiedName {
@@ -140,7 +129,11 @@ func (r *federatedResource) ComputePlacement(clusters []*fedv1a1.FederatedCluste
 	return computePlacement(r.federatedResource, clusters)
 }
 
-func (r *federatedResource) SkipClusterDeletion(clusterObj pkgruntime.Object) bool {
+func (r *federatedResource) IsNamespaceInHostCluster(clusterObj pkgruntime.Object) bool {
+	// TODO(marun) This comment should be added to the documentation
+	// and removed from this function (where it is no longer
+	// relevant).
+	//
 	// `Namespace` is the only Kubernetes type that can contain other
 	// types, and adding a federation-specific container type would be
 	// difficult or impossible. This requires that namespaced
@@ -192,38 +185,18 @@ func (r *federatedResource) ObjectForCluster(clusterName string) (*unstructured.
 	if overrides != nil {
 		for path, value := range overrides {
 			pathEntries := strings.Split(path, ".")
-			unstructured.SetNestedField(obj.Object, value, pathEntries...)
+			if err := unstructured.SetNestedField(obj.Object, value, pathEntries...); err != nil {
+				return nil, err
+			}
 		}
 	}
 
+	// Ensure that resources managed by federation always have the
+	// managed label.  The label is intended to be targeted by all the
+	// federation controllers.
+	util.AddManagedLabel(obj)
+
 	return obj, nil
-}
-
-func (r *federatedResource) MarkedForDeletion() bool {
-	return r.federatedResource.GetDeletionTimestamp() != nil
-}
-
-func (r *federatedResource) EnsureDeletion() error {
-	r.DeleteVersions()
-	_, err := r.deletionHelper.HandleObjectInUnderlyingClusters(
-		r.federatedResource,
-		r.TargetName().String(),
-		func(clusterObj pkgruntime.Object) bool {
-			// Skip deletion of a namespace in the host cluster as it will be
-			// removed by the garbage collector once its contents are removed.
-			return r.targetIsNamespace && util.IsPrimaryCluster(r.namespace, clusterObj)
-		},
-	)
-	return err
-}
-
-func (r *federatedResource) EnsureFinalizer() error {
-	updatedObj, err := r.deletionHelper.EnsureFinalizer(r.federatedResource)
-	if updatedObj != nil {
-		// Retain the updated template for use in future API calls.
-		r.federatedResource = updatedObj.(*unstructured.Unstructured)
-	}
-	return err
 }
 
 // TODO(marun) Use an enumeration for errorCode.
@@ -235,17 +208,13 @@ func (r *federatedResource) RecordEvent(reason, messageFmt string, args ...inter
 	r.eventRecorder.Eventf(r.Object(), corev1.EventTypeNormal, reason, messageFmt, args...)
 }
 
-func (r *federatedResource) NewUpdater() FederatedUpdater {
-	return NewFederatedUpdater(r.informer, r)
-}
-
 func (r *federatedResource) overridesForCluster(clusterName string) (util.ClusterOverridesMap, error) {
 	r.Lock()
 	defer r.Unlock()
 	if r.overridesMap == nil {
 		overridesMap, err := util.GetOverrides(r.federatedResource)
 		if err != nil {
-			return nil, errors.Errorf("Error reading cluster overrides for %s %q", r.federatedKind, r.federatedName)
+			return nil, errors.Wrapf(err, "Error reading cluster overrides")
 		}
 		r.overridesMap = overridesMap
 	}
@@ -289,6 +258,9 @@ func hashUnstructured(obj *unstructured.Unstructured, description string) (strin
 		return "", errors.Wrapf(err, "Failed to marshal %q to json", description)
 	}
 	hash := md5.New()
-	hash.Write(jsonBytes)
+	if _, err := hash.Write(jsonBytes); err != nil {
+		return "", err
+	}
+
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }

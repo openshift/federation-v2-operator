@@ -28,7 +28,7 @@ type FederatedClusterSpec struct {
 	// Name of the cluster registry Cluster resource from which to source api
 	// endpoints.
 	// TODO(marun) should this go away in favor of a 1:1 mapping?
-	ClusterRef apiv1.LocalObjectReference `json:"clusterRef,omitempty"`
+	ClusterRef LocalClusterReference `json:"clusterRef,omitempty"`
 
 	// Name of the secret containing kubeconfig to access the referenced cluster.
 	//
@@ -43,7 +43,23 @@ type FederatedClusterSpec struct {
 	//
 	// This can be left empty if the cluster allows insecure access.
 	// +optional
-	SecretRef *apiv1.LocalObjectReference `json:"secretRef,omitempty"`
+	SecretRef *LocalSecretReference `json:"secretRef,omitempty"`
+}
+
+// LocalClusterReference contains information to identify a cluster in the
+// cluster registry.
+type LocalClusterReference struct {
+	// Name of the cluster registry Cluster resource from which to source API
+	// endpoints.
+	Name string `json:"name"`
+}
+
+// LocalSecretReference is a reference to a secret within the enclosing
+// namespace.
+type LocalSecretReference struct {
+	// Name of a secret within the enclosing
+	// namespace
+	Name string `json:"name"`
 }
 
 // FederatedClusterStatus contains information about the current status of a
@@ -52,9 +68,9 @@ type FederatedClusterStatus struct {
 	// Conditions is an array of current cluster conditions.
 	// +optional
 	Conditions []ClusterCondition `json:"conditions,omitempty"`
-	// Zone is the name of availability zone in which the nodes of the cluster exist, e.g. 'us-east1-a'.
+	// Zones are the names of availability zones in which the nodes of the cluster exist, e.g. 'us-east1-a'.
 	// +optional
-	Zone string `json:"zone,omitempty"`
+	Zones []string `json:"zones,omitempty"`
 	// Region is the name of the region in which all of the nodes in the cluster exist.  e.g. 'us-east1'.
 	// +optional
 	Region string `json:"region,omitempty"`
@@ -71,6 +87,7 @@ type FederatedClusterStatus struct {
 // +kubebuilder:resource:path=federatedclusters
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name=ready,type=string,JSONPath=.status.conditions[?(@.type=='Ready')].status
+// +kubebuilder:printcolumn:name=age,type=date,JSONPath=.metadata.creationTimestamp
 type FederatedCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

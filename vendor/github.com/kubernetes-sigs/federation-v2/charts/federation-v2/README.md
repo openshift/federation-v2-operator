@@ -27,6 +27,37 @@ group](https://groups.google.com/forum/#!forum/kubernetes-sig-multicluster).
 - Kubernetes 1.11+
 - Helm 2.10+
 
+## Configuring RBAC for Helm (Optional)
+
+If your Kubernetes cluster has RBAC enabled, it will be necessary to
+ensure that helm is deployed with a service account with the
+permissions necessary to deploy federation:
+
+```bash
+$ cat << EOF | kubectl apply -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tiller
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tiller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: tiller
+    namespace: kube-system
+EOF
+
+$ helm init --service-account tiller
+```
+
 ## Installing the Chart
 
 First you'll need to create the reserved namespace for registering clusters with the
@@ -36,18 +67,28 @@ cluster registry:
 $ kubectl create ns kube-multicluster-public
 ```
 
-Install the chart with the release name `federation-v2`:
-
+Next, add the fedv2 chart repo to your local repository.
 ```bash
-$ helm install charts/federation-v2 --name federation-v2 --namespace federation-system
+$ helm repo add fedv2-charts https://raw.githubusercontent.com/kubernetes-sigs/federation-v2/master/charts
+
+$ helm repo list
+NAME            URL
+fedv2-charts   https://raw.githubusercontent.com/kubernetes-sigs/federation-v2/master/charts
 ```
 
-If you already have clusterregistry installed, skip installing it during federation-v2 installation
-as follows:
-
+With the repo added, available charts and versions can be viewed.
 ```bash
-$ helm install charts/federation-v2 --name federation-v2 --namespace federation-system --set clusterregistry.enabled=false
+$ helm search federation-v2
 ```
+
+Install the chart and specify the version to install with the
+`--version` argument. Replace `<x.x.x>` with your desired version.
+```bash
+$ helm install fedv2-charts/federation-v2 --version=<x.x.x> --namespace federation-system
+```
+
+If you already have clusterregistry installed, skip installing it by
+providing `--set clusterregistry.enabled=false` to the above command.
 
 ## Uninstalling the Chart
 
@@ -96,16 +137,29 @@ chart and their default values.
 | Parameter                             | Description                                                                                                                                                                                                 | Default                                                                                               |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | controllermanager.enabled             | Specifies whether to enable the controller manager in federation v2.                                                                                                                                        | true                                                                                                  |
-| controllermanager.replicaCount        | Number of replica for federation v2 controller manager.                                                                                                                                                     | 1                                                                                                     |
+| controllermanager.replicaCount        | Number of replicas for federation v2 controller manager.                                                                                                                                                     | 2                                                                                                     |
 | controllermanager.repository          | Repo of the federation v2 image.                                                                                                                                                                            | quay.io/kubernetes-multicluster                                                                       |
 | controllermanager.image               | Name of the federation v2 image.                                                                                                                                                                            | federation-v2                                                                                         |
 | controllermanager.tag                 | Tag of the federation v2 image.                                                                                                                                                                             | latest                                                                                                |
-| controllermanager.pullPolicy          | Image pull policy.                                                                                                                                                                                          | IfNotPresent                                                                                          |
-| controllermanager.featureGates        | Feature gates are a set of `key=value` pairs that describe alpha or experimental features. An administrator can use the `--feature-gates` command line flag on each component to turn a feature on or off.  | PushReconciler=true,SchedulerPreferences=true,CrossClusterServiceDiscovery=true,FederatedIngress=true |
-| controllermanager.federationNamespace | The namespace the federation control plane is deployed in.                                                                                                                                                  | federation-system                                                                                     |
+| controllermanager.imagePullPolicy     | Image pull policy.                                                                                                                                                                                          | IfNotPresent                                                                                          |
+| controllermanager.featureGates.PushReconciler               | Push reconciler feature.                                                                                                                                                              | true                                                                                                  |
+| controllermanager.featureGates.SchedulerPreferences         | Scheduler preferences feature.                                                                                                                                                        | true                                                                                                  |
+| controllermanager.featureGates.CrossClusterServiceDiscovery | Cross cluster service discovery feature.                                                                                                                                              | true                                                                                                  |
+| controllermanager.featureGates.FederatedIngress             | Federated ingress feature.                                                                                                                                                            | true                                                                                                  |
 | controllermanager.registryNamespace   | The cluster registry namespace.                                                                                                                                                                             | kube-multicluster-public                                                                              |
+| controllermanager.clusterAvailableDelay   | Time to wait before reconciling on a healthy cluster.                                                                                                                                                   | 20s                                                                                                   |
+| controllermanager.clusterUnavailableDelay | Time to wait before giving up on an unhealthy cluster.                                                                                                                                                  | 60s                                                                                                   |
+| controllermanager.leaderElectLeaseDuration | The maximum duration that a leader can be stopped before it is replaced by another candidate.                                                                                                          | 15s                                                                                                   |
+| controllermanager.leaderElectRenewDeadline | The interval between attempts by the acting master to renew a leadership slot before it stops leading. This must be less than or equal to `controllermanager.LeaderElectLeaseDuration.                 | 10s                                                                                                   |
+| controllermanager.leaderElectRetryPeriod   | The duration the clients should wait between attempting acquisition and renewal of a leadership.                                                                                                       | 5s                                                                                                    |
+| controllermanager.leaderElectResourceLock  | The type of resource object that is used for locking during leader election. Supported options are `configmaps` and `endpoints`.                                                                       | configmaps                                                                                            |
+| controllermanager.clusterHealthCheckPeriodSeconds    | How often to monitor the cluster health (in seconds).                                                                                                                                        | 10                                                                                                    |
+| controllermanager.clusterHealthCheckFailureThreshold | Minimum consecutive failures for the cluster health to be considered failed after having succeeded.                                                                                          | 3                                                                                                     |
+| controllermanager.clusterHealthCheckSuccessThreshold | Minimum consecutive successes for the cluster health to be considered successful after having failed.                                                                                        | 1                                                                                                     |
+| controllermanager.clusterHealthCheckTimeoutSeconds   | Number of seconds after which the cluster health check times out.                                                                                                                            | 3                                                                                                     |
+| controllermanager.syncController.skipAdoptingResources  | Whether to skip adopting pre-existing resource in member clusters.                                                                                                                        | false                                                                                                 |
 | clusterregistry.enabled               | Specifies whether to enable the clusterregistry in federation v2.                                                                                                                                           | true                                                                                                  |
-| global.limitedScope        | Whether the federation namespace will be the only target for federation. If set to true, the value set for `controllermanager.registryNamespace` and `controllermanager.registryNamespace` will be ignored. | false                                                                                                 |
+| global.scope                   | Whether the federation namespace will be the only target for federation.                                                                                                                                           | Cluster                                                                                              |
 
 Specify each parameter using the `--set key=value[,key=value]` argument to
 `helm install`.

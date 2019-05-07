@@ -17,13 +17,12 @@ limitations under the License.
 package framework
 
 import (
-	"time"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kubernetes-sigs/federation-v2/pkg/apis/core/typeconfig"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/dnsendpoint"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/federatedcluster"
+	"github.com/kubernetes-sigs/federation-v2/pkg/controller/federatedtypeconfig"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/ingressdns"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/schedulingmanager"
 	"github.com/kubernetes-sigs/federation-v2/pkg/controller/servicedns"
@@ -52,6 +51,20 @@ func NewSyncControllerFixture(tl common.TestLogger, controllerConfig *util.Contr
 		if err != nil {
 			tl.Fatalf("Error starting status controller: %v", err)
 		}
+	}
+	return f
+}
+
+// NewFederatedTypeConfigControllerFixure initializes a new federatedtypeconfig
+// controller fixure.
+func NewFederatedTypeConfigControllerFixture(tl common.TestLogger, config *util.ControllerConfig) *ControllerFixture {
+	f := &ControllerFixture{
+		stopChan: make(chan struct{}),
+	}
+
+	err := federatedtypeconfig.StartController(config, f.stopChan)
+	if err != nil {
+		tl.Fatalf("Error starting federatedtypeconfig controller: %v", err)
 	}
 	return f
 }
@@ -93,8 +106,8 @@ func NewClusterControllerFixture(tl common.TestLogger, config *util.ControllerCo
 	f := &ControllerFixture{
 		stopChan: make(chan struct{}),
 	}
-	monitorPeriod := 1 * time.Second
-	err := federatedcluster.StartClusterController(config, f.stopChan, monitorPeriod)
+	clusterHealthCheckConfig := util.ClusterHealthCheckConfig{PeriodSeconds: 1, FailureThreshold: 1}
+	err := federatedcluster.StartClusterController(config, clusterHealthCheckConfig, f.stopChan)
 	if err != nil {
 		tl.Fatalf("Error starting cluster controller: %v", err)
 	}
