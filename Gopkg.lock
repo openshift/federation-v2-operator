@@ -310,7 +310,7 @@
   version = "v1.0.2"
 
 [[projects]]
-  digest = "1:b08019c99556854b2db8aa7a1bded1bf8e239163879581ca10a0615c257eac70"
+  digest = "1:f372b771a2b42d33a119ee7d107eefbe09d50b2f27f667542fa43a56a9ff57f5"
   name = "github.com/kubernetes-sigs/federation-v2"
   packages = [
     "cmd/controller-manager/app",
@@ -337,22 +337,21 @@
     "pkg/controller/sync/dispatch",
     "pkg/controller/sync/version",
     "pkg/controller/util",
-    "pkg/controller/util/deletionhelper",
     "pkg/controller/util/finalizers",
     "pkg/controller/util/planner",
     "pkg/controller/util/podanalyzer",
     "pkg/features",
-    "pkg/kubefed2",
-    "pkg/kubefed2/enable",
-    "pkg/kubefed2/federate",
-    "pkg/kubefed2/options",
-    "pkg/kubefed2/util",
+    "pkg/kubefedctl",
+    "pkg/kubefedctl/enable",
+    "pkg/kubefedctl/federate",
+    "pkg/kubefedctl/options",
+    "pkg/kubefedctl/util",
     "pkg/schedulingtypes",
     "pkg/version",
   ]
   pruneopts = ""
-  revision = "442e8868c6bd02bb61871af02269cb18a58804d4"
-  version = "v0.0.9"
+  revision = "71d233ede685707df554ef653e06bf7f0229415c"
+  version = "v0.0.10"
 
 [[projects]]
   digest = "1:5b179070a620e93dfaa2bf568e052f22acb8126570987a6b7641b7a008a1b5a3"

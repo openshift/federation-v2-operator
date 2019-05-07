@@ -38,13 +38,13 @@ import (
 	"github.com/kubernetes-sigs/federation-v2/pkg/apis/core/typeconfig"
 	fedv1a1 "github.com/kubernetes-sigs/federation-v2/pkg/apis/core/v1alpha1"
 	genericclient "github.com/kubernetes-sigs/federation-v2/pkg/client/generic"
-	"github.com/kubernetes-sigs/federation-v2/pkg/kubefed2/options"
-	"github.com/kubernetes-sigs/federation-v2/pkg/kubefed2/util"
+	"github.com/kubernetes-sigs/federation-v2/pkg/kubefedctl/options"
+	"github.com/kubernetes-sigs/federation-v2/pkg/kubefedctl/util"
 )
 
 const (
-	DefaultFederationGroup   = "types.federation.k8s.io"
-	DefaultFederationVersion = "v1alpha1"
+	federationGroupUsage = "The name of the API group to use for the generated federation type."
+	targetVersionUsage   = "Optional, the API version of the target type."
 )
 
 var (
@@ -60,23 +60,21 @@ var (
 
 	enable_example = `
 		# Enable federation of Deployments
-		kubefed2 enable deployments.apps --host-cluster-context=cluster1
+		kubefedctl enable deployments.apps --host-cluster-context=cluster1
 
 		# Enable federation of Deployments identified by name specified in
 		# deployment.yaml
-		kubefed2 enable -f deployment.yaml`
+		kubefedctl enable -f deployment.yaml`
 )
 
 type enableType struct {
 	options.GlobalSubcommandOptions
+	options.CommonEnableOptions
 	enableTypeOptions
 }
 
 type enableTypeOptions struct {
-	targetName          string
-	targetVersion       string
 	federationVersion   string
-	federationGroup     string
 	output              string
 	outputYAML          bool
 	filename            string
@@ -86,9 +84,7 @@ type enableTypeOptions struct {
 // Bind adds the join specific arguments to the flagset passed in as an
 // argument.
 func (o *enableTypeOptions) Bind(flags *pflag.FlagSet) {
-	flags.StringVar(&o.targetVersion, "version", "", "Optional, the API version of the target type.")
-	flags.StringVar(&o.federationGroup, "federation-group", DefaultFederationGroup, "The name of the API group to use for the generated federation type.")
-	flags.StringVar(&o.federationVersion, "federation-version", DefaultFederationVersion, "The API version to use for the generated federation type.")
+	flags.StringVar(&o.federationVersion, "federation-version", options.DefaultFederationVersion, "The API version to use for the generated federation type.")
 	flags.StringVarP(&o.output, "output", "o", "", "If provided, the resources that would be created in the API by the command are instead output to stdout in the provided format.  Valid values are ['yaml'].")
 	flags.StringVarP(&o.filename, "filename", "f", "", "If provided, the command will be configured from the provided yaml file.  Only --output will be accepted from the command line")
 }
@@ -118,6 +114,7 @@ func NewCmdTypeEnable(cmdOut io.Writer, config util.FedConfig) *cobra.Command {
 
 	flags := cmd.Flags()
 	opts.GlobalSubcommandBind(flags)
+	opts.CommonSubcommandBind(flags, federationGroupUsage, targetVersionUsage)
 	opts.Bind(flags)
 
 	return cmd
@@ -142,16 +139,17 @@ func (j *enableType) Complete(args []string) error {
 		return nil
 	}
 
-	if len(args) == 0 {
-		return errors.New("NAME is required")
+	if err := j.SetName(args); err != nil {
+		return err
 	}
-	fd.Name = args[0]
 
-	if len(j.targetVersion) > 0 {
-		fd.Spec.TargetVersion = j.targetVersion
+	fd.Name = j.TargetName
+
+	if len(j.TargetVersion) > 0 {
+		fd.Spec.TargetVersion = j.TargetVersion
 	}
-	if len(j.federationGroup) > 0 {
-		fd.Spec.FederationGroup = j.federationGroup
+	if len(j.FederationGroup) > 0 {
+		fd.Spec.FederationGroup = j.FederationGroup
 	}
 	if len(j.federationVersion) > 0 {
 		fd.Spec.FederationVersion = j.federationVersion

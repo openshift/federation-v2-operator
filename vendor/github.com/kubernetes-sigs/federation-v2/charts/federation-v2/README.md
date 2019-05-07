@@ -27,6 +27,37 @@ group](https://groups.google.com/forum/#!forum/kubernetes-sig-multicluster).
 - Kubernetes 1.11+
 - Helm 2.10+
 
+## Configuring RBAC for Helm (Optional)
+
+If your Kubernetes cluster has RBAC enabled, it will be necessary to
+ensure that helm is deployed with a service account with the
+permissions necessary to deploy federation:
+
+```bash
+$ cat << EOF | kubectl apply -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tiller
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tiller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: tiller
+    namespace: kube-system
+EOF
+
+$ helm init --service-account tiller
+```
+
 ## Installing the Chart
 
 First you'll need to create the reserved namespace for registering clusters with the
@@ -106,7 +137,7 @@ chart and their default values.
 | Parameter                             | Description                                                                                                                                                                                                 | Default                                                                                               |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | controllermanager.enabled             | Specifies whether to enable the controller manager in federation v2.                                                                                                                                        | true                                                                                                  |
-| controllermanager.replicaCount        | Number of replica for federation v2 controller manager.                                                                                                                                                     | 1                                                                                                     |
+| controllermanager.replicaCount        | Number of replicas for federation v2 controller manager.                                                                                                                                                     | 2                                                                                                     |
 | controllermanager.repository          | Repo of the federation v2 image.                                                                                                                                                                            | quay.io/kubernetes-multicluster                                                                       |
 | controllermanager.image               | Name of the federation v2 image.                                                                                                                                                                            | federation-v2                                                                                         |
 | controllermanager.tag                 | Tag of the federation v2 image.                                                                                                                                                                             | latest                                                                                                |
@@ -126,6 +157,7 @@ chart and their default values.
 | controllermanager.clusterHealthCheckFailureThreshold | Minimum consecutive failures for the cluster health to be considered failed after having succeeded.                                                                                          | 3                                                                                                     |
 | controllermanager.clusterHealthCheckSuccessThreshold | Minimum consecutive successes for the cluster health to be considered successful after having failed.                                                                                        | 1                                                                                                     |
 | controllermanager.clusterHealthCheckTimeoutSeconds   | Number of seconds after which the cluster health check times out.                                                                                                                            | 3                                                                                                     |
+| controllermanager.syncController.skipAdoptingResources  | Whether to skip adopting pre-existing resource in member clusters.                                                                                                                        | false                                                                                                 |
 | clusterregistry.enabled               | Specifies whether to enable the clusterregistry in federation v2.                                                                                                                                           | true                                                                                                  |
 | global.scope                   | Whether the federation namespace will be the only target for federation.                                                                                                                                           | Cluster                                                                                              |
 

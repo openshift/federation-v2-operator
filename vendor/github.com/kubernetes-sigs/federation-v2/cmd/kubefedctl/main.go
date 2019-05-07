@@ -14,5 +14,25 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package sharedinformers
+// kubefedctl is a tool for managing clusters in a federation.
+package main
 
+import (
+	"fmt"
+	"os"
+
+	"k8s.io/apiserver/pkg/util/logs"
+	_ "k8s.io/client-go/plugin/pkg/client/auth" // Load all client auth plugins for GCP, Azure, Openstack, etc
+
+	"github.com/kubernetes-sigs/federation-v2/pkg/kubefedctl"
+)
+
+func main() {
+	logs.InitLogs()
+	defer logs.FlushLogs()
+
+	if err := kubefedctl.NewKubeFedCtlCommand(os.Stdout).Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+}

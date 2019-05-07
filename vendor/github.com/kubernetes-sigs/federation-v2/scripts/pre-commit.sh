@@ -35,7 +35,7 @@ IN_MEMORY_E2E_TEST_CMD="${COMMON_TEST_CMD} -race ${COMMON_TEST_ARGS} -in-memory-
 function build-binaries() {
   ${MAKE_CMD} hyperfed
   ${MAKE_CMD} controller
-  ${MAKE_CMD} kubefed2
+  ${MAKE_CMD} kubefedctl
 }
 
 function download-dependencies() {
@@ -113,6 +113,12 @@ check-git-state
 echo "Verifying Gofmt"
 ./hack/go-tools/verify-gofmt.sh
 
+echo "Checking boilerplate text"
+./vendor/github.com/kubernetes/repo-infra/verify/verify-boilerplate.sh --rootdir="${ROOT_DIR}" -v
+
+echo "Linting"
+golangci-lint run
+
 echo "Checking that correct Error Package is used."
 ./hack/verify-errpkg.sh
 
@@ -132,7 +138,7 @@ echo "Downloading e2e test dependencies"
 ./scripts/download-e2e-binaries.sh
 
 CREATE_INSECURE_REGISTRY=y CONFIGURE_INSECURE_REGISTRY=y OVERWRITE_KUBECONFIG=y \
-    ./scripts/create-clusters.sh
+    KIND_TAG="v1.14.0" ./scripts/create-clusters.sh
 
 # Initialize list of clusters to join
 join-cluster-list > /dev/null
@@ -148,6 +154,12 @@ kubectl scale deployments federation-controller-manager -n federation-system --r
 
 echo "Running e2e tests with race detector against cluster-scoped federation-v2 with in-memory controllers"
 run-e2e-tests-with-in-memory-controllers
+
+# FederatedTypeConfig controller is needed to remove finalizers from
+# FederatedTypeConfigs in order to successfully delete federation in the next
+# step.
+echo "Scaling back up cluster-scoped controller manager prior to deletion"
+kubectl scale deployments federation-controller-manager -n federation-system --replicas=1
 
 echo "Deleting cluster-scoped federation-v2"
 ./scripts/delete-federation.sh

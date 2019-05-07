@@ -6,7 +6,7 @@
 ##
 controllermanager:
   enabled: true
-  replicaCount: 1
+  replicaCount: 2
   repository: quay.io/kubernetes-multicluster
   image: federation-v2
   tag: canary
@@ -33,6 +33,8 @@ controllermanager:
   clusterHealthCheckTimeoutSeconds:
   ## Supported options are `configmaps` and `endpoints`
   leaderElectResourceLock:
+  syncController:
+    skipAdoptingResources:
   ## Value of feature gates item should be either `true` or `false`
   featureGates:
     PushReconciler:

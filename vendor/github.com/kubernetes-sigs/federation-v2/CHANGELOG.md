@@ -1,4 +1,20 @@
 # Unreleased
+-  [#722](https://github.com/kubernetes-sigs/federation-v2/issues/722) -
+   Removal of the FederatedTypeConfig for namespaces now disables all
+   namespaced sync controllers. Additionally, the namespace FederatedTypeConfig
+   must always exist prior to starting any namespaced sync controller.
+ - [#612](https://github.com/kubernetes-sigs/federation-v2/pull/612) -
+   Label managed resources in member clusters and only watch resources
+   so labeled to minimize the memory usage of the federated control
+   plane.
+ - [#721](https://github.com/kubernetes-sigs/federation-v2/issues/721) -
+   kubefed2 disable now deletes the FederatedTypeConfig rather than set
+   propagationEnabled, waits for the sync controller to shut down, and
+   optionally removes the federated type CRD.
+ - [#825](https://github.com/kubernetes-sigs/federation-v2/pull/825) -
+   kubefed2 tool is renamed to kubefedctl.
+
+# v0.0.9
 -  [#776](https://github.com/kubernetes-sigs/federation-v2/pull/776) -
    Switch to use `scope` instead of `limitedScope` to specify if it is
    `Namespaced` or `Cluster` scoped federation deployment.

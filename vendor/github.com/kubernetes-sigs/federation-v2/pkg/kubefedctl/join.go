@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kubefed2
+package kubefedctl
 
 import (
 	"context"
@@ -29,8 +29,8 @@ import (
 
 	fedv1a1 "github.com/kubernetes-sigs/federation-v2/pkg/apis/core/v1alpha1"
 	genericclient "github.com/kubernetes-sigs/federation-v2/pkg/client/generic"
-	"github.com/kubernetes-sigs/federation-v2/pkg/kubefed2/options"
-	"github.com/kubernetes-sigs/federation-v2/pkg/kubefed2/util"
+	"github.com/kubernetes-sigs/federation-v2/pkg/kubefedctl/options"
+	"github.com/kubernetes-sigs/federation-v2/pkg/kubefedctl/util"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
@@ -62,7 +62,7 @@ var (
 		# a valid RFC 1123 subdomain name. Cluster context
 		# must be specified if the cluster name is different
 		# than the cluster's context in the local kubeconfig.
-		kubefed2 join foo --host-cluster-context=bar`
+		kubefedctl join foo --host-cluster-context=bar`
 
 	// Policy rules allowing full access to resources in the cluster
 	// or namespace.
@@ -84,7 +84,7 @@ var (
 
 type joinFederation struct {
 	options.GlobalSubcommandOptions
-	options.CommonSubcommandOptions
+	options.CommonJoinOptions
 	options.FederationConfigOptions
 	joinFederationOptions
 }
@@ -402,10 +402,10 @@ func createFederatedCluster(client genericclient.Client, joiningClusterName,
 			Name:      joiningClusterName,
 		},
 		Spec: fedv1a1.FederatedClusterSpec{
-			ClusterRef: corev1.LocalObjectReference{
+			ClusterRef: fedv1a1.LocalClusterReference{
 				Name: joiningClusterName,
 			},
-			SecretRef: &corev1.LocalObjectReference{
+			SecretRef: &fedv1a1.LocalSecretReference{
 				Name: secretName,
 			},
 		},
@@ -455,7 +455,19 @@ func createFederationNamespace(clusterClientset kubeclient.Interface, federation
 		return federationNS, nil
 	}
 
-	_, err := clusterClientset.CoreV1().Namespaces().Create(federationNS)
+	_, err := clusterClientset.CoreV1().Namespaces().Get(federationNamespace, metav1.GetOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		glog.V(2).Infof("Could not get %s namespace: %v", federationNamespace, err)
+		return nil, err
+	}
+
+	if err == nil {
+		glog.V(2).Infof("Already existing %s namespace", federationNamespace)
+		return federationNS, nil
+	}
+
+	// Not found, so create.
+	_, err = clusterClientset.CoreV1().Namespaces().Create(federationNS)
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		glog.V(2).Infof("Could not create %s namespace: %v", federationNamespace, err)
 		return nil, err
