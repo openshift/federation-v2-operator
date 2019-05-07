@@ -15,7 +15,7 @@
 
 FEDERATION_CHART_DIR=vendor/github.com/kubernetes-sigs/federation-v2/charts/federation-v2/
 PACKAGE=${PACKAGE:-"federation"}
-VERSION=${VERSION:-"0.0.9"}
+VERSION=${VERSION:-"0.0.10"}
 FLAVOR=${FLAVOR:-"upstream-manifests"}
 MANIFESTS_DIR=${FLAVOR}/${PACKAGE}/${VERSION}
 
