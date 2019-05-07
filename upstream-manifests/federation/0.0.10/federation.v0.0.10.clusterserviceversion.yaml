@@ -363,9 +363,10 @@ spec:
                     - --federation-namespace=$(FEDERATION_NAMESPACE)
                     - -v=5
                     - --logtostderr
-                    - --default-scope=Namespaced
                   imagePullPolicy: IfNotPresent
                   env:
+                  - name: DEFAULT_FEDERATION_SCOPE
+                    value: Namespaced
                   - name: FEDERATION_NAMESPACE
                     valueFrom:
                       fieldRef:
