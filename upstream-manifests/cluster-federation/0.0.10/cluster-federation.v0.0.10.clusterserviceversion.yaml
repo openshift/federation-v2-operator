@@ -50,6 +50,9 @@ spec:
   maturity: alpha
   provider:
     name: Red Hat
+  maintainers:
+  - email: kubefed-operator@redhat.com
+    name: Kubefed Team
   labels:
     alm-owner-federation: cluster-federation
     alm-status-descriptors: cluster-federation.v0.0.10
