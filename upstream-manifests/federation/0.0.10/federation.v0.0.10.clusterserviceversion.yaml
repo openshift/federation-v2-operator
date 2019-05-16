@@ -75,8 +75,6 @@ spec:
           --host-cluster-context mycluster \       # name of a KUBECONFIG context for the hosting cluster
           --add-to-registry \                      # add clusters to the cluster-registry
           --federation-namespace=<namespace> \     # namespace where federation is deployed
-          --registry-namespace=<namespace> \       # namespace where federation is deployed
-          --limited-scope=true \                   # ensure that created serviceaccount has permissions only scoped to the namespace
           -v 2
     
     `kubefedctl join` creates `FederatedCluster` and `Cluster` resources named
