@@ -181,16 +181,19 @@ spec:
     federation API surface for the deployments resource.
 
         kubectl get crd/federateddeployments.types.federation.k8s.io
-        No resources found.
+        NAME                                           CREATED AT
+        federateddeployments.types.federation.k8s.io   2019-05-16T14:18:27Z
 
     `FederatedTypeConfig` resources configure federation to watch the new
     federation API surface created by `kubefedctl enable`.
 
         kubectl get federatedtypeconfigs -n <namespace>
+        NAME                     AGE
+        deployments.extensions   74s
 
 
     **Important Note**: Federation of a CRD requires that the CRD be installed
-    on all member clusters. If the CRD is not installed on a member cluster,
+    on host cluster and all member clusters. If the CRD is not installed on a member cluster,
     propagation to that cluster will fail.
 
 
