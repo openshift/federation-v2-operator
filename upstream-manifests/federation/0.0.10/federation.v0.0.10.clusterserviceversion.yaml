@@ -250,12 +250,18 @@ spec:
 
         kubefedctl disable deployments.extensions --federation-namespace=<namespace>
 
-    This will disable the propagation of federated deployments, but leave the
-    API surface and `FederatedTypeConfig` intact.
+    This will disable the propagation of federated deployments and delete the corresponding  
+    Federated API resource.
 
-    To fully remove the API surface, use the `--delete-from-api` flag:
+    To fully remove the API surface, use the `--delete-crd` flag:
 
-        kubefedctl disable deployments.extensions --federation-namespace=<namespace> --delete-from-api
+        kubefedctl disable deployments.extensions --federation-namespace=<namespace> --delete-crd
+
+        Disabled propagation for FederatedTypeConfig "federation-test/deployments.extensions"
+        Verifying propagation controller is stopped for FederatedTypeConfig "federation-test/deployments.extensions"
+        Propagation controller for FederatedTypeConfig "federation-test/deployments.extensions" is stopped
+        customresourcedefinition "federateddeployments.types.federation.k8s.io" deleted
+        federatedtypeconfig "federation-test/deployments.extensions" deleted
 
     See also the upstream [user guide](https://github.com/kubernetes-sigs/federation-v2/blob/v0.0.10/docs/userguide.md#disabling-federation-of-an-api-type) for more information.
   keywords: ['kubernetes', 'federation', 'hybrid', 'hybrid cloud', 'multi-cluster', 'cluster']
