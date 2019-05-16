@@ -149,7 +149,9 @@ spec:
 
         kubefedctl unjoin mycluster \
           --host-cluster-context mycluster \       # name of a KUBECONFIG context for the hosting cluster
-          --registry-namespace=<namespace> \       # namespace where federation is deployed
+          --cluster-context mycluster \            # name of a KUBECONFIG context for the cluster to unjoin
+          --federation-namespace=<namespace> \     # namespace where federation is deployed
+          --remove-from-registry \                 # Remove the cluster from the cluster registry running in the host cluster context.
           -v 2
 
     This command deletes the `FederatedCluster` and `Cluster` for the unjoining
