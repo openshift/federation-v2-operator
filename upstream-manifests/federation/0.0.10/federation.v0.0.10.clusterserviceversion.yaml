@@ -243,7 +243,7 @@ spec:
 
     You should be able to see the deployment in the target cluster!
 
-        kubectl get deployments
+        kubectl get deployments hello -n <namespace> --context=<mycluster>
         NAME    READY   UP-TO-DATE   AVAILABLE   AGE
         hello   1/1     1            1           33s
 
