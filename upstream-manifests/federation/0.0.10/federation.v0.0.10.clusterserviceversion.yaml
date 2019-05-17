@@ -11,7 +11,7 @@ metadata:
     description: Gain Hybrid Cloud capabilities between your clusters with Kubernetes Federation.
     certified: "false"
     containerImage: "quay.io/kubernetes-multicluster/federation-v2:v0.0.10"
-    createdAt: "2019-01-01T00:00:00Z"
+    createdAt: "2019-05-06T18:56:00Z"
     repository: https://github.com/openshift/federation-v2-operator
 spec:
   displayName: Federation
