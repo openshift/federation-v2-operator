@@ -8,6 +8,65 @@ metadata:
   annotations:
     capabilities: Basic Install
     categories: "OpenShift Optional, Integration & Delivery"
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "clusterregistry.k8s.io/v1alpha1",
+          "kind": "Cluster",
+          "metadata": {
+            "name": "cluster-name"
+          },
+          "spec": {
+            "authInfo": {},
+            "kubernetesApiEndpoints": {
+              "serverEndpoints": [
+                {
+                  "clientCIDR": "0.0.0.0/0",
+                  "serverAddress": "https://cluster-name.example.com:6443"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "apiVersion": "core.federation.k8s.io/v1alpha1",
+          "kind": "FederatedCluster",
+          "metadata": {
+            "name": "cluster-name"
+          },
+          "spec": {
+            "clusterRef": {
+              "name": "cluster-name"
+            },
+            "secretRef": {
+              "name": "<name-of-secret>"
+            }
+          }
+        },
+        {
+          "apiVersion": "core.federation.k8s.io/v1alpha1",
+          "kind": "FederatedTypeConfig",
+          "metadata": {
+            "name": "deployments.extensions"
+          },
+          "spec": {
+            "federatedType": {
+              "group": "types.federation.k8s.io",
+              "kind": "FederatedDeployment",
+              "pluralName": "federateddeployments",
+              "version": "v1alpha1"
+            },
+            "namespaced": true,
+            "propagationEnabled": true,
+            "target": {
+              "group": "extensions",
+              "kind": "Deployment",
+              "pluralName": "deployments",
+              "version": "v1beta1"
+            }
+          }
+        }
+      ]
     description: Gain Hybrid Cloud capabilities between your clusters with Kubernetes Federation.
     certified: "false"
     containerImage: "quay.io/kubernetes-multicluster/federation-v2:v0.0.10"
