@@ -65,6 +65,144 @@ metadata:
               "version": "v1beta1"
             }
           }
+        },
+        {
+          "apiVersion": "multiclusterdns.federation.k8s.io/v1alpha1",
+          "kind": "Domain",
+          "metadata": {
+            "name": "test-domain"
+            },
+          "spec": {
+            "domain": "your.domain.name"
+            }
+        },
+        {
+          "apiVersion": "multiclusterdns.federation.k8s.io/v1alpha1",
+          "kind": "ServiceDNSRecord",
+          "metadata": {
+            "name": "test-service"
+            },
+          "spec": {
+            "domainRef": "test-domain",
+            "recordTTL": 300
+            }
+        },
+        {
+          "apiVersion": "federatedservicestatuses.core.federation.k8s.io/v1alpha1",
+          "kind": "FederatedServiceStatus",
+          "metadata": {
+            "name": "test-federatedservice-status"
+            },
+          "spec": {
+            "clusterStatus": {
+               "clusterName": "test-cluster", 
+               "status": "cluster-status"
+                }
+            }
+        },
+        {
+          "apiVersion": "multiclusterdns.federation.k8s.io/v1alpha1",
+          "kind": "DNSEndpoint",
+          "metadata": {
+            "name": "service-test-service"
+            },
+          "spec": {
+            "endpoints": [
+              {
+                "dnsName": "test-service.test-namespace.test-domain.svc.your.domain.name",
+                "recordTTL": 300,
+                "recordType": "A",
+                "targets": [
+                  "test-cluster"
+                  ]
+              }
+              ]
+            }
+          },
+        {
+          "apiVersion": "multiclusterdns.federation.k8s.io/v1alpha1",
+          "kind": "IngressDNSRecord",
+          "metadata": {
+            "name": "test-ingress"
+            },
+          "spec": {
+            "hosts": [
+              "ingress.example.com"
+              ],
+              "recordTTL": 300
+            }
+        },
+        {
+          "apiVersion": "scheduling.federation.k8s.io/v1alpha1",
+          "kind": "ReplicaSchedulingPreference",
+          "metadata": {
+            "name": "test-deployment"
+            },
+          "spec": {
+            "targetKind": "FederatedDeployment",
+            "totalReplicas": 10,
+            "rebalance": true,
+            "clusters": {
+              "cluster1": {
+                "weight": 2
+                },
+              "cluster2": {
+                "weight": 3
+                }
+              }
+            }
+        },
+        {
+          "apiVersion": "propagatedversions.core.federation.k8s.io/v1alpha1",
+          "kind": "PropagatedVersion",
+          "metadata": {
+            "name": "test-propagation"
+            },
+          "spec": {
+            "clusterVersions": {
+               "clusterName": "test-cluster",
+               "version": "0.0.10"  
+                } 
+            }
+        },
+        {
+          "apiVersion": "core.federation.k8s.io/v1alpha1",
+          "kind": "FederationConfig",
+          "metadata": {
+            "name": "test-federationconfig"
+            },
+          "spec": {
+            "scope": "Cluster",
+            "controllerDuration": {
+              "availableDelay": "20s",
+              "unavailableDelay": "60s",
+              "clusterMonitorPeriod": "40s"
+              },
+            "leaderElect": {
+              "leaseDuration": "15s",
+              "renewDeadline": "10s",
+              "retryPeriod": "5s",
+              "resourceLock": "configmaps"
+              },
+            "featureGates": [
+              {
+                "name": "PushReconciler",
+                "enabled": true
+                },
+              {
+                "name": "SchedulerPreferences",
+                "enabled": true
+              },
+             {
+               "name": "CrossClusterServiceDiscovery",
+               "enabled": true
+              },
+              {
+               "name": "FederatedIngress"
+               }
+            ]
+          },
+          "enabled": true
         }
       ]
     description: Gain Hybrid Cloud capabilities between your clusters with Kubernetes Federation.
